@@ -46,33 +46,10 @@ install_desktop() {
     done < "$source" > "$destination"
 }
 
-install_nautilus_script() {
-    local destination="$1" line
-    install -D -m 755 "share/nautilus-scripts/Send with LocalSend" "$destination"
-    # Keep this installation independent of PATH, including custom prefixes.
-    # Preserve the common URI decoding logic; %q protects the executable path.
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        case "$line" in
-            localsend_gtk_binary=*) printf 'localsend_gtk_binary=%q\n' "$PREFIX/bin/localsend-gtk" ;;
-            *) printf '%s\n' "$line" ;;
-        esac
-    done < "share/nautilus-scripts/Send with LocalSend" > "$destination"
-}
-
 echo "Installing LocalSend GTK to $PREFIX..."
 install -D -m 755 bin/localsend-gtk "$PREFIX/bin/localsend-gtk"
 install_desktop share/applications/org.localsend.localsend_gtk.desktop \
     "$PREFIX/share/applications/org.localsend.localsend_gtk.desktop" 644
-# Dolphin requires user-installed service menus to be executable to trust them.
-install_desktop share/kio/servicemenus/localsend-dolphin.desktop \
-    "$PREFIX/share/kio/servicemenus/localsend-dolphin.desktop" 755
-if [[ -f "share/nautilus-scripts/Send with LocalSend" ]]; then
-    install_nautilus_script "$PREFIX/share/nautilus-scripts/Send with LocalSend"
-    if [[ "$PREFIX" == "$HOME/.local" || "$PREFIX" == "$HOME/.local/"* ]]; then
-        install_nautilus_script \
-            "${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts/Send with LocalSend"
-    fi
-fi
 install -D -m 644 share/icons/hicolor/512x512/apps/localsend-gtk.png "$PREFIX/share/icons/hicolor/512x512/apps/localsend-gtk.png"
 mkdir -p "$PREFIX/share/doc"
 cp -R share/doc/localsend-gtk "$PREFIX/share/doc/"
@@ -80,5 +57,5 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$PREFIX/share/applications"
 fi
 echo "Installed. GTK4 >= 4.12, libadwaita >= 1.5 and compatible system libraries are required."
-echo "Your desktop must include $PREFIX/share in its XDG data search paths to find the launcher and Dolphin menu."
-echo "Nautilus reads scripts only from its per-user scripts directory; see README.md for setup."
+echo "Your desktop must include $PREFIX/share in its XDG data search paths to find the launcher."
+echo "File manager integrations are optional and are installed from Settings."

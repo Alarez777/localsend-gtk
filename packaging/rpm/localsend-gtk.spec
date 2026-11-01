@@ -32,8 +32,6 @@ rm -rf $RPM_BUILD_ROOT
 install -D -p -m 0755 target/release/localsend-gtk %{buildroot}%{_bindir}/localsend-gtk
 install -D -p -m 0644 assets/logo.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/localsend-gtk.png
 install -D -p -m 0644 packaging/rpm/localsend-gtk.desktop %{buildroot}%{_datadir}/applications/org.localsend.localsend_gtk.desktop
-install -D -p -m 0644 packaging/desktop/localsend-dolphin.desktop %{buildroot}%{_datadir}/kio/servicemenus/localsend-dolphin.desktop
-install -D -p -m 0755 "packaging/desktop/nautilus-scripts/Send with LocalSend" "%{buildroot}%{_datadir}/nautilus-scripts/Send with LocalSend"
 install -D -p -m 0644 vendor/localsend-rs/UPSTREAM.md %{buildroot}%{_docdir}/%{name}/localsend-rs/UPSTREAM.md
 install -D -p -m 0644 vendor/localsend-rs/THIRD_PARTY_NOTICES.md %{buildroot}%{_docdir}/%{name}/localsend-rs/THIRD_PARTY_NOTICES.md
 
@@ -44,8 +42,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.localsend.localse
 %{_bindir}/localsend-gtk
 %{_datadir}/icons/hicolor/512x512/apps/localsend-gtk.png
 %{_datadir}/applications/org.localsend.localsend_gtk.desktop
-%{_datadir}/kio/servicemenus/localsend-dolphin.desktop
-"%{_datadir}/nautilus-scripts/Send with LocalSend"
 %license LICENSE LICENSES/*.txt
 %{_docdir}/%{name}/localsend-rs/
 %doc README.md THIRD_PARTY_NOTICES.md

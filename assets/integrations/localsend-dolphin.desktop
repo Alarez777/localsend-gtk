@@ -5,6 +5,7 @@ MimeType=application/octet-stream;inode/directory;
 Actions=SendWithLocalSend;
 X-KDE-Priority=TopLevel
 X-KDE-Protocols=file
+X-LocalSend-GTK-Owner=org.localsend.localsend_gtk
 
 [Desktop Action SendWithLocalSend]
 Name=Send with LocalSend
@@ -17,4 +18,4 @@ Name[fr]=Envoyer avec LocalSend
 Name[es]=Enviar con LocalSend
 Name[ru]=Отправить через LocalSend
 Icon=localsend-gtk
-Exec=localsend-gtk %U
+Exec=@LOCALSEND_GTK_EXEC@ %U

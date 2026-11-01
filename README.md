@@ -82,9 +82,14 @@ need not be pixel-for-pixel identical across different toolkits.
   Completed files are retained; unfinished files are cleaned up before confirmation.
 - Optional desktop tray with navigation and Quit, minimize-to-tray and XDG autostart.
   If the desktop has no tray host, the window remains accessible.
-- General/Receive/Send/Network settings, live language/theme controls, and receiver
-  Start/Restart/Stop with pending-restart feedback. Listener restarts preserve TLS
-  identity and stopping revokes browser links and pending offers.
+- Optional per-user Dolphin and Nautilus **Send with LocalSend** integrations.
+  Settings shows whether each file manager and its required packages are present,
+  installs one only on request, and can remove it again. Packages no longer install
+  these integrations automatically.
+- General/Receive/Send/File manager integrations/Network settings, live
+  language/theme controls, and receiver Start/Restart/Stop with pending-restart
+  feedback. Listener restarts preserve TLS identity and stopping revokes browser
+  links and pending offers.
 - Persisted device name, theme, language, save folder, port, animations, Quick save,
   Save to history, receive PIN, favorites and send mode. Apply network changes while idle
   without restarting the application.
@@ -152,32 +157,32 @@ The script rebuilds the current source, produces DEB, RPM and tar.gz packages in
 Versioned tags must match Cargo.toml, Cargo.lock and the RPM spec. Release notes
 for this update are in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
 
-All three packages include the application launcher and Dolphin's **Send with
-LocalSend** menu for local files and folders (KDE Frameworks 5.85 or newer).
+All three packages include the application launcher. File manager integrations
+are optional and are **not** installed by packages, at startup or by the tar
+installer. Open **Settings → File manager integrations** and install the
+**Send with LocalSend** action for Dolphin (KDE Frameworks 5.85 or newer) or
+Nautilus (GNOME Files) for the current user. The same section removes it again.
+
+The app writes only below the user's data directory:
+
+- `${XDG_DATA_HOME:-$HOME/.local/share}/kio/servicemenus/localsend-dolphin.desktop`
+- `${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts/Send with LocalSend`
+
+No administrator access is required. If a required file manager or package is
+missing, the row names the package to install and keeps the action disabled.
+Integrations installed system-wide by an older package are shown as managed by
+the package manager and are not deleted from the app. An older tar installation
+may leave copies under its prefix; remove those manually if they are no longer
+wanted. The Flatpak sandbox cannot write to the host's data directories, so
+these integrations are unavailable there.
+
 For the tar archive, run `sudo ./install.sh` to install under `/usr/local`, or
 `./install.sh "$HOME/.local"` for the current user. A custom prefix is also supported;
 its `share` directory must be on the desktop session's XDG data search path for
-the launcher and Dolphin menu to appear. The installer writes absolute executable
-and icon paths, so launching does not depend on adding its `bin` directory to `PATH`.
+the launcher to appear. The installer writes absolute executable and icon paths,
+so launching does not depend on adding its `bin` directory to `PATH`.
 
 Package recipes are also provided for Arch Linux (`packaging/aur`) and Flatpak (`packaging/flatpak`), though they are not published to official repositories.
-
-Packages also include a **Send with LocalSend** script for local files and folders
-in GNOME Files (Nautilus). Nautilus discovers scripts only in
-`${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts`, not system XDG data paths.
-The tar installer enables it automatically when installing under `$HOME/.local`.
-After installing the DEB or RPM, enable it for your account with:
-
-```sh
-mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts"
-ln -s "/usr/share/nautilus-scripts/Send with LocalSend" \
-    "${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts/Send with LocalSend"
-```
-
-For a tar installation elsewhere, replace `/usr/share` above with the installation
-prefix's `share` directory (for example, `/usr/local/share`). Right-click selected
-local files or folders and choose **Scripts → Send with LocalSend**. System
-packages do not modify individual users' script directories.
 
 On a Wayland session the application selects the Wayland backend automatically,
 unless `GDK_BACKEND` was explicitly set. To require Wayland:
@@ -227,6 +232,11 @@ when loaded; their missing file paths and sender details are not guessed. If sav
 cannot be read, the app leaves it untouched and keeps new receipts only for the current
 session. Deleting an entry or clearing history never deletes a received file.
 
+File manager integrations under Settings → File manager integrations are
+per-user and optional. The app checks for Dolphin, Nautilus and their required
+commands each time the section is opened. Installing or removing an integration
+takes effect immediately and never modifies system-wide package files.
+
 - `Ctrl+1`, `Ctrl+2`, `Ctrl+3`: Receive, Send, Settings.
 - `Ctrl+O`: select files.
 - `Ctrl+V` on the Send view: paste text or files.
@@ -257,19 +267,22 @@ listener is restored and the error is shown; correct the saved draft and apply a
 ## Validation
 
 The automated suite covers history, outgoing and incoming cancellation, authenticated
-favorite Quick save, X.509 identity checks, multi-file session/per-file progress and
-14 browser tests, alongside formatting and warning-free Clippy checks. The separate
-Wayland interaction fixture runs in standard and high-contrast modes, including history
-and receiving details at 360×540, live language changes, and cancellation confirmations
-for replaced sessions. The latest local run passed 105 application tests (2 environment
-tests run separately), 175 vendored protocol tests (1 external-network test ignored), all
-14 browser tests, isolated tray interactions, and both Wayland modes. Real desktop file-manager and GNOME/KDE portal
-integration still needs hands-on verification.
+favorite Quick save, X.509 identity checks, multi-file session/per-file progress,
+file manager integration installation and ownership checks, and 14 browser tests,
+alongside formatting and warning-free Clippy checks. The separate Wayland interaction
+fixture runs in standard and high-contrast modes, including history, file manager
+integration states and receiving details at 360×540, live language changes, and
+cancellation confirmations for replaced sessions. The latest local run passed 116
+application tests (3 display/environment tests run separately), 175 vendored protocol tests
+(1 external-network test ignored), all 14 browser tests, isolated tray interactions,
+and both Wayland modes. Real desktop file-manager and GNOME/KDE portal integration
+still needs hands-on verification.
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
+python3 scripts/test-file-manager-integrations.py
 node scripts/test-browser.cjs
 node --test scripts/test-web-share.cjs
 dbus-run-session -- env LOCALSEND_TRAY_TEST_BUS=1 cargo test --locked tray_private_bus_registers_activates_recovers_and_unregisters -- --ignored --test-threads=1 --nocapture
@@ -288,7 +301,8 @@ bash scripts/test-wayland.sh python3 scripts/test-file-open.py
 The visual test verifies selection editing and continuation, device deduplication,
 independent recipient progress/cancellation, success clearing, native dialogs,
 browser QR rendering and consent, receive cancellation,
-multi-file receive details and desktop setting controls. It opens all three views,
+multi-file receive details, file manager integration states and desktop setting
+controls. It opens all three views,
 switches dark/light/OLED,
 Yaru and custom appearance, checks invalid custom-color input, and exercises desktop,
 compact, narrow and 360×540 layouts. It also checks that notifications cannot intercept

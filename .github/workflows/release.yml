@@ -57,7 +57,7 @@ jobs:
 
       - name: Check source and tests
         run: |
-          python3 scripts/test-nautilus.py
+          python3 scripts/test-file-manager-integrations.py
           cargo fmt --all --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked

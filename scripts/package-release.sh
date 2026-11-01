@@ -66,8 +66,6 @@ TAR_STAGING="$STAGING/$TAR_NAME"
 mkdir -p "$TAR_STAGING/bin" "$TAR_STAGING/share/applications" "$TAR_STAGING/share/icons/hicolor/512x512/apps"
 install -m 755 "$BIN_SRC" "$TAR_STAGING/bin/localsend-gtk"
 install -m 644 packaging/rpm/localsend-gtk.desktop "$TAR_STAGING/share/applications/org.localsend.localsend_gtk.desktop"
-install -D -m 644 packaging/desktop/localsend-dolphin.desktop "$TAR_STAGING/share/kio/servicemenus/localsend-dolphin.desktop"
-install -D -m 755 "packaging/desktop/nautilus-scripts/Send with LocalSend" "$TAR_STAGING/share/nautilus-scripts/Send with LocalSend"
 install -m 644 assets/logo.png "$TAR_STAGING/share/icons/hicolor/512x512/apps/localsend-gtk.png"
 copy_notices "$TAR_STAGING/share/doc/localsend-gtk"
 

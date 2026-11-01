@@ -638,6 +638,54 @@ mod tests {
         assert!(ui.0.window.visible_dialog().is_none());
     }
     #[test]
+    #[ignore = "requires a display; run with scripts/test-wayland.sh or xvfb-run"]
+    fn file_manager_integration_rows_show_missing_packages() {
+        adw::init().unwrap();
+        install_styles();
+        let app = adw::Application::builder()
+            .application_id("org.localsend.GtkFileManagerTest")
+            .build();
+        app.register(gio::Cancellable::NONE).unwrap();
+        let ui = build(
+            &app,
+            Settings {
+                language: i18n::Locale::En,
+                ..Settings::default()
+            },
+            true,
+        );
+        settle();
+        ui.0.stack.set_visible_child_name("settings");
+        show_settings_group(&ui, "file-managers");
+        snapshot(&ui, "settings-file-managers");
+
+        let dolphin = find_named(ui.0.window.upcast_ref(), "file-manager-dolphin")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            dolphin.subtitle().as_deref(),
+            Some("Not installed · Missing packages: dolphin")
+        );
+        let nautilus = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            nautilus.subtitle().as_deref(),
+            Some("Not installed · Missing packages: nautilus, bash")
+        );
+        let install = find_button(dolphin.upcast_ref(), "Install").unwrap();
+        assert!(!install.is_sensitive());
+
+        i18n::set_locale(i18n::Locale::Es);
+        assert_eq!(
+            dolphin.subtitle().as_deref(),
+            Some("No instalada · Paquetes que faltan: dolphin")
+        );
+    }
+
+    #[test]
     #[ignore = "requires a Wayland compositor; see scripts/test-wayland.sh"]
     fn wayland_views_and_selection() {
         adw::init().unwrap();
@@ -1718,6 +1766,24 @@ mod tests {
         snapshot(&ui, "settings-receive");
         show_settings_group(&ui, "send");
         snapshot(&ui, "settings-send");
+        show_settings_group(&ui, "file-managers");
+        snapshot(&ui, "settings-file-managers");
+        let dolphin = find_named(ui.0.window.upcast_ref(), "file-manager-dolphin")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            dolphin.subtitle().as_deref(),
+            Some("Not installed · Missing packages: dolphin")
+        );
+        let nautilus = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            nautilus.subtitle().as_deref(),
+            Some("Not installed · Missing packages: nautilus, bash")
+        );
         show_settings_group(&ui, "general");
         let language = find_combo(ui.0.window.upcast_ref(), "Language").unwrap();
         let theme = find_theme(ui.0.window.upcast_ref()).unwrap();
@@ -1904,6 +1970,7 @@ struct Inner {
     settings: RefCell<Settings>,
     appearance: crate::appearance::Appearance,
     network_controls: RefCell<Option<settings_view::NetworkControls>>,
+    file_manager_controls: RefCell<Option<settings_view::FileManagerControls>>,
     selection: RefCell<Vec<Selection>>,
     selection_generation: Cell<u64>,
     selection_request_counter: Cell<u64>,
@@ -2406,6 +2473,7 @@ pub fn build(app: &adw::Application, mut settings: Settings, offline_fixture: bo
         settings: RefCell::new(settings.clone()),
         appearance,
         network_controls: RefCell::new(None),
+        file_manager_controls: RefCell::new(None),
         selection: RefCell::new(Vec::new()),
         selection_generation: Cell::new(0),
         selection_request_counter: Cell::new(0),
@@ -2513,6 +2581,16 @@ pub fn build(app: &adw::Application, mut settings: Settings, offline_fixture: bo
         cancel_receive.connect_clicked(move |_| ui.cancel_incoming());
     }
     stack.add_named(&ui.settings_page(), Some("settings"));
+    {
+        let weak_ui = Rc::downgrade(&ui.0);
+        stack.connect_visible_child_name_notify(move |stack| {
+            if stack.visible_child_name().as_deref() == Some("settings") {
+                if let Some(inner) = weak_ui.upgrade() {
+                    Ui(inner).refresh_file_manager_controls();
+                }
+            }
+        });
+    }
     let weak_ui = Rc::downgrade(&ui.0);
     let last_frame = Cell::new(0_i64);
     logo.add_tick_callback(move |logo, clock| {

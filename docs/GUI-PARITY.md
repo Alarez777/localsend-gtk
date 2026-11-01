@@ -24,7 +24,7 @@ Theme reference packages: Dart material_color_utilities 0.13.0, Yaru 10.2.0.
 | Receive | Per-file acceptance and cancellation confirmation; session/per-file progress, counts, bytes, speed, elapsed/remaining, status, completed-file opening and Done; authenticated Favorites Quick save; inline messages always require Copy / Open / Close | Exact Flutter ProgressPage layout, completion countdown, taskbar/wake feedback, thumbnails and richer failure/retry presentation |
 | History | Received files/messages with sender and time; Open file / Show in folder / Information / Delete from history; confirmed Delete history; Save to history defaults on; legacy entries are preserved on load; removing history keeps received files | Larger history and real desktop file-manager verification; old plain-text entries cannot recover missing metadata |
 | Favorites / address | IP Address (IPv4/IPv6); Confirm / Cancel; offline editing preserves pinned identity; delete confirmation; editor returns to Favorites | Full alignment of less common connection settings |
-| Settings | General/Receive/Send/Network categories; live language/theme/color controls; Save to history; Start/Restart/Stop and pending-restart hint; persistent network/desktop preferences | Remaining advanced settings and their exact upstream behavior |
+| Settings | General/Receive/Send/File manager integrations/Network categories; live language/theme/color controls; Save to history; explicit per-user Dolphin/Nautilus install/remove with package checks; Start/Restart/Stop and pending-restart hint; persistent network/desktop preferences | Remaining advanced settings, additional file managers and their exact upstream behavior |
 | Browser sharing | QR/link, copy, approval, progress and stopping | Official browser protocol, encryption/PIN options and persistent request list; current temporary HTTP service is explicitly described |
 
 Unreadable history is left untouched: saved-history writes and deletions are blocked,
@@ -32,9 +32,10 @@ while new receipts can be viewed for the current session. Save to history contro
 receipts, including full incoming message text; switching it off does not clear old entries.
 
 The automated suite covers history, cancellation, authenticated Favorites Quick save,
-X.509 identity checks, multi-file progress, 14 browser tests, formatting, Clippy, and
-the separate Wayland interaction fixture in both ordinary and high-contrast modes.
-The latest local run passed 105 application tests (2 environment tests run separately),
+X.509 identity checks, multi-file progress, file manager integration ownership and
+install/remove behavior, 14 browser tests, formatting, Clippy, and the separate
+Wayland interaction fixture in both ordinary and high-contrast modes.
+The latest local run passed 116 application tests (3 display/environment tests run separately),
 175 vendored protocol tests (1 external-network test ignored), all 14 browser tests,
 isolated tray interactions, and both Wayland modes.
 Validation combines pure palette vectors, real loopback HTTP/HTTPS protocol tests and GTK

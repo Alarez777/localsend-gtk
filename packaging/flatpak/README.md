@@ -34,6 +34,7 @@ autostart entry created by an older version is removed if it belongs to this app
 and the corresponding saved settings are reset. Host autostart support requires
 the desktop Background portal. Launch the package manually.
 
-The native packages' Dolphin service menu and Nautilus script are not installed
-by this manifest. Select files through the application's file chooser or the
-desktop's Open With action instead.
+The Flatpak sandbox cannot write to the host user's data directories, so
+**Settings → File manager integrations** is shown as unavailable. The native
+packages do not install integrations automatically either. In the Flatpak, use
+the application's file chooser or the desktop's Open With action.

@@ -60,8 +60,6 @@ license = "MIT AND Apache-2.0"
 assets = [
     { source = "target/release/localsend-gtk", dest = "/usr/bin/localsend-gtk", mode = "755" },
     { source = "packaging/rpm/localsend-gtk.desktop", dest = "/usr/share/applications/org.localsend.localsend_gtk.desktop", mode = "644" },
-    { source = "packaging/desktop/localsend-dolphin.desktop", dest = "/usr/share/kio/servicemenus/localsend-dolphin.desktop", mode = "644" },
-    { source = "packaging/desktop/nautilus-scripts/Send with LocalSend", dest = "/usr/share/nautilus-scripts/Send with LocalSend", mode = "755" },
     { source = "assets/logo.png", dest = "/usr/share/icons/hicolor/512x512/apps/localsend-gtk.png", mode = "644" },
     { source = "LICENSE", dest = "/usr/share/doc/localsend-gtk/LICENSE", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/localsend-gtk/README.md", mode = "644" },

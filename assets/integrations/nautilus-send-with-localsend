@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # GNOME Nautilus / Files script to send selected files or directories via LocalSend GTK.
+# X-LocalSend-GTK-Owner: org.localsend.localsend_gtk
 # Nautilus may expand desktop field codes such as %f in its positional arguments.
 # Its URI environment preserves the selection, including '%' and newlines.
 
-# The tar installer substitutes this assignment for custom installation prefixes.
+# The integration installer substitutes this assignment for the app binary.
 localsend_gtk_binary=
 
 fail() {

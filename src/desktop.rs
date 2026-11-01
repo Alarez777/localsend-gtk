@@ -305,21 +305,23 @@ fn set_autostart_at(
     }
 }
 
-fn desktop_entry(executable: &Path, start_minimized: bool) -> io::Result<String> {
+/// Quote one executable argument for a desktop entry's `Exec=` value.
+///
+/// The Desktop Entry spec applies string escaping before Exec argument quoting,
+/// so both layers are escaped, including literal percent field-code markers.
+pub(crate) fn desktop_exec_argument(executable: &Path) -> io::Result<String> {
     let executable_text = executable.to_str().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Autostart requires a UTF-8 executable path",
+            "A desktop entry requires a UTF-8 executable path",
         )
     })?;
     if !executable.is_absolute() || executable_text.chars().any(|c| c.is_control() || c == '=') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Autostart requires an absolute executable path without control characters or '='.",
+            "A desktop entry requires an absolute executable path without control characters or '='.",
         ));
     }
-    // The Desktop Entry spec applies string escaping before Exec argument
-    // quoting. Escape both layers, including literal percent field-code markers.
     let mut argument = String::from("\"");
     for ch in executable_text.chars() {
         match ch {
@@ -341,8 +343,13 @@ fn desktop_entry(executable: &Path, start_minimized: bool) -> io::Result<String>
     } else {
         ""
     };
+    Ok(format!("{launcher}{command}"))
+}
+
+fn desktop_entry(executable: &Path, start_minimized: bool) -> io::Result<String> {
+    let executable = desktop_exec_argument(executable)?;
     let hidden = if start_minimized { " --hidden" } else { "" };
-    Ok(format!("[Desktop Entry]\nType=Application\nVersion=1.0\nName=LocalSend GTK\nComment=Send and receive files on your local network\nExec={launcher}{command}{hidden}\nIcon=localsend-gtk\nTerminal=false\nStartupNotify=false\nX-GNOME-Autostart-enabled=true\n{OWNER_KEY}={APP_ID}\n"))
+    Ok(format!("[Desktop Entry]\nType=Application\nVersion=1.0\nName=LocalSend GTK\nComment=Send and receive files on your local network\nExec={executable}{hidden}\nIcon=localsend-gtk\nTerminal=false\nStartupNotify=false\nX-GNOME-Autostart-enabled=true\n{OWNER_KEY}={APP_ID}\n"))
 }
 
 #[cfg(test)]

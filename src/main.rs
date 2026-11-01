@@ -2,6 +2,7 @@ mod address;
 mod alias_gen;
 mod appearance;
 mod desktop;
+mod file_managers;
 mod history;
 mod http_client;
 mod i18n;

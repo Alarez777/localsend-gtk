@@ -1,5 +1,6 @@
 use super::*;
 use crate::appearance::{Color, ColorMode};
+use crate::file_managers::{self, FileManagerIntegration, InstallState, IntegrationError};
 use crate::i18n::{self, Locale};
 use crate::settings::QuickSaveMode;
 
@@ -15,6 +16,17 @@ pub(super) struct NetworkControls {
     alias: adw::EntryRow,
     pin: adw::PasswordEntryRow,
     port: adw::SpinRow,
+}
+
+pub(super) struct FileManagerControls {
+    environment: file_managers::Environment,
+    rows: Vec<FileManagerRow>,
+}
+
+struct FileManagerRow {
+    integration: FileManagerIntegration,
+    row: adw::ActionRow,
+    button: gtk::Button,
 }
 
 const ALL_COLOR_MODES: [ColorMode; 5] = [
@@ -605,6 +617,7 @@ impl Ui {
         }
         send.add(&approve);
         content.append(&send);
+        self.file_manager_settings(&content);
         let network = adw::PreferencesGroup::new();
         network.set_widget_name("settings-network");
         i18n::bind_property(&network, "title", "Network");
@@ -693,6 +706,231 @@ impl Ui {
         }
         self.refresh_network_controls();
         scrolled(&clamped(&content))
+    }
+
+    fn file_manager_settings(&self, content: &gtk::Box) {
+        let group = adw::PreferencesGroup::new();
+        group.set_widget_name("settings-file-managers");
+        i18n::bind_property(&group, "title", "File manager integrations");
+
+        let environment = if self.0.offline_fixture {
+            Ok(file_managers::Environment::fixture())
+        } else {
+            file_managers::Environment::current()
+        };
+        let environment = match environment {
+            Ok(environment) => environment,
+            Err(error) => {
+                i18n::bind_format_property(
+                    &group,
+                    "description",
+                    "Could not check file manager integrations: {error}",
+                    &[("error", error.to_string())],
+                );
+                content.append(&group);
+                return;
+            }
+        };
+        i18n::bind_property(
+            &group,
+            "description",
+            if environment.is_flatpak() {
+                "File manager integrations are not available in the Flatpak sandbox."
+            } else {
+                "Add Send with LocalSend to supported file managers. Integrations are created for your user account and can be removed at any time."
+            },
+        );
+
+        let mut rows = Vec::new();
+        for integration in FileManagerIntegration::ALL {
+            let row = adw::ActionRow::builder()
+                .title(integration.title())
+                .subtitle_lines(2)
+                .build();
+            row.set_widget_name(&format!("file-manager-{}", integration.id()));
+            i18n::bind_property(&row, "title", integration.title());
+
+            let button = gtk::Button::with_label("");
+            button.set_valign(gtk::Align::Center);
+            button.add_css_class("flat");
+            {
+                let ui = self.clone();
+                button.connect_clicked(move |_| {
+                    ui.toggle_file_manager_integration(integration);
+                });
+            }
+            row.add_suffix(&button);
+            group.add(&row);
+            rows.push(FileManagerRow {
+                integration,
+                row,
+                button,
+            });
+        }
+
+        content.append(&group);
+        *self.0.file_manager_controls.borrow_mut() =
+            Some(FileManagerControls { environment, rows });
+        self.refresh_file_manager_controls();
+    }
+
+    fn toggle_file_manager_integration(&self, integration: FileManagerIntegration) {
+        let environment = self
+            .0
+            .file_manager_controls
+            .borrow()
+            .as_ref()
+            .map(|controls| controls.environment.clone());
+        let Some(environment) = environment else {
+            return;
+        };
+        let status = integration.inspect(&environment);
+        let installing = match status.state {
+            InstallState::Installed => false,
+            InstallState::NotInstalled | InstallState::Legacy => {
+                if !status.missing.is_empty() {
+                    return;
+                }
+                true
+            }
+            InstallState::SystemManaged | InstallState::Conflict | InstallState::Unknown => {
+                return;
+            }
+        };
+        let result = if installing {
+            integration.install(&environment)
+        } else {
+            integration.remove(&environment)
+        };
+        match result {
+            Ok(()) => self.toast_text(if installing {
+                "Integration installed"
+            } else {
+                "Integration removed"
+            }),
+            Err(error) => {
+                let heading = if installing {
+                    "Could not install the integration"
+                } else {
+                    "Could not remove the integration"
+                };
+                let body = match &error {
+                    IntegrationError::Unsupported => i18n::tr(
+                        "File manager integrations are not available in the Flatpak sandbox.",
+                    ),
+                    IntegrationError::Conflict => {
+                        i18n::tr("A file not created by LocalSend already uses this name.")
+                    }
+                    IntegrationError::SystemManaged => {
+                        i18n::tr("This integration is managed by your system package.")
+                    }
+                    IntegrationError::Io(error) => error.to_string(),
+                };
+                alert(&self.0.window, heading, &body);
+            }
+        }
+        self.refresh_file_manager_controls();
+    }
+
+    pub(super) fn refresh_file_manager_controls(&self) {
+        let controls = self.0.file_manager_controls.borrow();
+        let Some(controls) = controls.as_ref() else {
+            return;
+        };
+        let flatpak = controls.environment.is_flatpak();
+        for entry in &controls.rows {
+            if flatpak {
+                i18n::bind_property(&entry.row, "subtitle", "Not available in Flatpak");
+                entry.button.set_visible(false);
+                continue;
+            }
+            let status = entry.integration.inspect(&controls.environment);
+            let packages = status
+                .missing
+                .iter()
+                .map(|requirement| requirement.package)
+                .collect::<Vec<_>>()
+                .join(", ");
+            match status.state {
+                InstallState::NotInstalled => {
+                    if packages.is_empty() {
+                        i18n::bind_property(&entry.row, "subtitle", "Not installed");
+                    } else {
+                        i18n::bind_format_property(
+                            &entry.row,
+                            "subtitle",
+                            "Not installed · Missing packages: {packages}",
+                            &[("packages", packages)],
+                        );
+                    }
+                    entry.button.set_visible(true);
+                    entry.button.set_sensitive(status.missing.is_empty());
+                    i18n::bind_property(&entry.button, "label", "Install");
+                }
+                InstallState::Installed => {
+                    if packages.is_empty() {
+                        i18n::bind_property(&entry.row, "subtitle", "Installed");
+                    } else {
+                        i18n::bind_format_property(
+                            &entry.row,
+                            "subtitle",
+                            "Installed · Missing packages: {packages}",
+                            &[("packages", packages)],
+                        );
+                    }
+                    entry.button.set_visible(true);
+                    entry.button.set_sensitive(true);
+                    i18n::bind_property(&entry.button, "label", "Remove");
+                }
+                InstallState::Legacy => {
+                    if packages.is_empty() {
+                        i18n::bind_property(
+                            &entry.row,
+                            "subtitle",
+                            "Legacy integration detected. Install it again to replace it.",
+                        );
+                    } else {
+                        i18n::bind_format_property(
+                            &entry.row,
+                            "subtitle",
+                            "Legacy integration detected · Missing packages: {packages}",
+                            &[("packages", packages)],
+                        );
+                    }
+                    entry.button.set_visible(true);
+                    entry.button.set_sensitive(status.missing.is_empty());
+                    i18n::bind_property(&entry.button, "label", "Install");
+                }
+                InstallState::SystemManaged => {
+                    i18n::bind_property(
+                        &entry.row,
+                        "subtitle",
+                        "Installed system-wide by your package manager.",
+                    );
+                    entry.button.set_visible(false);
+                }
+                InstallState::Conflict => {
+                    i18n::bind_property(
+                        &entry.row,
+                        "subtitle",
+                        "A file not created by LocalSend already uses this name.",
+                    );
+                    entry.button.set_visible(false);
+                }
+                InstallState::Unknown => {
+                    i18n::bind_format_property(
+                        &entry.row,
+                        "subtitle",
+                        "Could not check this integration: {error}",
+                        &[(
+                            "error",
+                            status.error.unwrap_or_else(|| "Unknown error".into()),
+                        )],
+                    );
+                    entry.button.set_visible(false);
+                }
+            }
+        }
     }
 
     fn refresh_network_controls(&self) {
