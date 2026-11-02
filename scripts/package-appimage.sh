@@ -71,7 +71,31 @@ install -m 644 vendor/localsend-rs/UPSTREAM.md \
     vendor/localsend-rs/THIRD_PARTY_NOTICES.md \
     "$APPDIR/usr/share/doc/localsend-gtk/localsend-rs/"
 
-desktop-file-validate "$APPDIR/org.localsend.localsend_gtk.desktop"
+shopt -s nullglob
+ROOT_DESKTOPS=("$APPDIR"/*.desktop)
+shopt -u nullglob
+if [[ ${#ROOT_DESKTOPS[@]} -ne 1 ]]; then
+    echo "The AppDir must contain exactly one root .desktop file; found ${#ROOT_DESKTOPS[@]}." >&2
+    exit 1
+fi
+ROOT_DESKTOP="${ROOT_DESKTOPS[0]}"
+ICON_NAME="$(sed -n 's/^Icon=//p' "$ROOT_DESKTOP" | head -n 1)"
+[[ -n "$ICON_NAME" ]] || { echo "The root desktop file has no Icon entry." >&2; exit 1; }
+[[ -f "$APPDIR/$ICON_NAME.png" || -f "$APPDIR/$ICON_NAME.svg" ]] || {
+    echo "The root icon for Icon=$ICON_NAME is missing." >&2
+    exit 1
+}
+[[ -e "$APPDIR/.DirIcon" ]] || { echo "The AppDir is missing .DirIcon." >&2; exit 1; }
+[[ -x "$APPDIR/AppRun" ]] || { echo "The AppDir is missing an executable AppRun." >&2; exit 1; }
+[[ -f "$APPDIR/usr/share/metainfo/org.localsend.localsend_gtk.appdata.xml" ]] || {
+    echo "The AppDir is missing its AppStream metadata." >&2
+    exit 1
+}
+grep -q '^StartupWMClass=org\.localsend\.localsend_gtk$' "$ROOT_DESKTOP" || {
+    echo "The root desktop file is missing the StartupWMClass association." >&2
+    exit 1
+}
+desktop-file-validate "$ROOT_DESKTOP"
 mkdir -p "$ROOT/target/dist"
 OUTPUT="$ROOT/target/dist/localsend-gtk-v${VERSION}-linux-${ARCH}.AppImage"
 rm -f "$OUTPUT"

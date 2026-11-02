@@ -136,7 +136,7 @@ pub fn install(context: &Context, app_language: Locale) -> Result<(), Error> {
     let exec = format!("{} %U", desktop_exec_argument(&context.appimage)?);
     let action_names = action_names(app_language);
     let contents = format!(
-        "[Desktop Entry]\nType=Application\nName=LocalSend GTK\nGenericName=File Transfer\nComment=An open source cross-platform alternative to AirDrop (GTK4/Wayland)\nExec={exec}\nIcon={ICON_NAME}\nTerminal=false\nStartupNotify=true\nStartupWMClass={APP_ID}\nCategories=Network;FileTransfer;Utility;\nMimeType=application/octet-stream;inode/directory;\nKeywords=localsend;airdrop;transfer;sharing;lan;network;gtk;\nX-Wayland-Native=true\nActions=SendWithLocalSend;\n{OWNER_KEY}={APP_ID}\n\n[Desktop Action SendWithLocalSend]\n{action_names}Exec={exec}\n",
+        "[Desktop Entry]\nType=Application\nName=LocalSend GTK\nGenericName=File Transfer\nComment=An open source cross-platform alternative to AirDrop (GTK4/Wayland)\nExec={exec}\nIcon={ICON_NAME}\nTerminal=false\nStartupNotify=true\nStartupWMClass={APP_ID}\nCategories=Network;FileTransfer;\nMimeType=application/octet-stream;inode/directory;\nKeywords=localsend;airdrop;transfer;sharing;lan;network;gtk;\nX-Wayland-Native=true\nX-AppImage-Name=LocalSend GTK\nActions=SendWithLocalSend;\n{OWNER_KEY}={APP_ID}\n\n[Desktop Action SendWithLocalSend]\n{action_names}Exec={exec}\n",
     );
     write_file(&icon, LOGO)?;
     write_file(&desktop, contents.as_bytes())?;

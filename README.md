@@ -213,9 +213,13 @@ directories, so these integrations are unavailable there.
 
 When running the AppImage, **Settings → Desktop integration** can install a
 user launcher and icon for the AppImage. This makes the icon appear in the
-application menu and dock. The file icon shown by Nautilus for the `.AppImage`
-file itself still depends on AppImageLauncher, Gearlever or a compatible
-thumbnailer.
+application menu and dock. The embedded `.desktop` also carries
+`StartupWMClass=org.localsend.localsend_gtk`, so tools such as Gearlever or
+AppImageLauncher can associate the running window with the launcher and offer
+**Pin to dock**. After replacing an AppImage that was already integrated,
+remove and re-add its integration so the tool reads the updated desktop file.
+The file icon shown by Nautilus for the `.AppImage` file itself still depends on
+AppImageLauncher, Gearlever or a compatible thumbnailer.
 
 For the tar archive, run `sudo ./install.sh` to install under `/usr/local`, or
 `./install.sh "$HOME/.local"` for the current user. A custom prefix is also supported;

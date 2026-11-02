@@ -43,9 +43,16 @@ entry, so they keep working after the temporary AppImage mount disappears. If
 the AppImage file is moved, reinstall those integrations from Settings.
 
 The AppImage contains `org.localsend.localsend_gtk.png`, a compatibility
-`localsend-gtk.png` alias and `.DirIcon`. To make the application icon appear in
-the menu, dock and window, open **Settings → Desktop integration → Application
-menu and icon**. That action installs:
+`localsend-gtk.png` alias and `.DirIcon`. Its embedded desktop file includes
+`StartupWMClass=org.localsend.localsend_gtk`; desktop integration tools such as
+Gearlever copy this key and can then associate the running window with the
+launcher, so the dock icon and **Pin to dock** work. After replacing an
+AppImage that was already integrated, remove and re-add the integration in the
+tool so it reads the new desktop file.
+
+To make the application icon appear in the menu, dock and window, open
+**Settings → Desktop integration → Application menu and icon**. That action
+installs:
 
 - `~/.local/share/applications/org.localsend.localsend_gtk.desktop`
 - `~/.local/share/icons/hicolor/512x512/apps/org.localsend.localsend_gtk.png`
