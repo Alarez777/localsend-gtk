@@ -182,7 +182,7 @@ its `share` directory must be on the desktop session's XDG data search path for
 the launcher to appear. The installer writes absolute executable and icon paths,
 so launching does not depend on adding its `bin` directory to `PATH`.
 
-Package recipes are also provided for Arch Linux (`packaging/aur`) and Flatpak (`packaging/flatpak`), though they are not published to official repositories.
+Package recipes are also provided for Arch Linux (`packaging/aur`) and Flatpak (`packaging/flatpak`), though they are not published to official repositories. A thin AppImage can be built with `scripts/package-appimage.sh`; it uses the system GTK4/libadwaita runtime. See `packaging/appimage/README.md`.
 
 On a Wayland session the application selects the Wayland backend automatically,
 unless `GDK_BACKEND` was explicitly set. To require Wayland:
@@ -272,7 +272,7 @@ file manager integration installation and ownership checks, and 14 browser tests
 alongside formatting and warning-free Clippy checks. The separate Wayland interaction
 fixture runs in standard and high-contrast modes, including history, file manager
 integration states and receiving details at 360×540, live language changes, and
-cancellation confirmations for replaced sessions. The latest local run passed 116
+cancellation confirmations for replaced sessions. The latest local run passed 117
 application tests (3 display/environment tests run separately), 175 vendored protocol tests
 (1 external-network test ignored), all 14 browser tests, isolated tray interactions,
 and both Wayland modes. Real desktop file-manager and GNOME/KDE portal integration

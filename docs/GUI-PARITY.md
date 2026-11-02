@@ -35,7 +35,7 @@ The automated suite covers history, cancellation, authenticated Favorites Quick 
 X.509 identity checks, multi-file progress, file manager integration ownership and
 install/remove behavior, 14 browser tests, formatting, Clippy, and the separate
 Wayland interaction fixture in both ordinary and high-contrast modes.
-The latest local run passed 116 application tests (3 display/environment tests run separately),
+The latest local run passed 117 application tests (3 display/environment tests run separately),
 175 vendored protocol tests (1 external-network test ignored), all 14 browser tests,
 isolated tray interactions, and both Wayland modes.
 Validation combines pure palette vectors, real loopback HTTP/HTTPS protocol tests and GTK

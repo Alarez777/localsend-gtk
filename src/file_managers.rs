@@ -241,7 +241,7 @@ impl FileManagerIntegration {
         if environment.flatpak {
             return Err(IntegrationError::Unsupported);
         }
-        let executable = env::current_exe()?;
+        let executable = crate::desktop::launch_executable()?;
         let path = self.target(environment);
         match self.target_kind(&path, environment)? {
             TargetKind::Owned | TargetKind::Missing => {}
