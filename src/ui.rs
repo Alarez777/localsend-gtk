@@ -680,9 +680,18 @@ mod tests {
             .downcast::<adw::ActionRow>()
             .unwrap();
         assert_eq!(
+            menu.title().as_str(),
+            "Nautilus (direct menu · requires nautilus-python)"
+        );
+        assert_eq!(
             menu.subtitle().as_deref(),
             Some("Not installed · Missing packages: nautilus, nautilus-python")
         );
+        let bulk = find_named(ui.0.window.upcast_ref(), "file-manager-bulk-menu")
+            .unwrap()
+            .downcast::<gtk::MenuButton>()
+            .unwrap();
+        assert!(!bulk.is_sensitive());
         let nemo = find_named(ui.0.window.upcast_ref(), "file-manager-nemo")
             .unwrap()
             .downcast::<adw::ActionRow>()
@@ -710,6 +719,13 @@ mod tests {
             Some("Install missing dependencies")
         );
         dialog.force_close();
+        settle();
+
+        ui.toast_text("Short toast");
+        let toast = ui.0.fixture_toasts.borrow().last().unwrap().clone();
+        assert_eq!(toast.timeout(), 3);
+        snapshot(&ui, "settings-file-managers-toast-toast");
+        toast.dismiss();
         settle();
 
         i18n::set_locale(i18n::Locale::Es);
@@ -1823,9 +1839,18 @@ mod tests {
             .downcast::<adw::ActionRow>()
             .unwrap();
         assert_eq!(
+            menu.title().as_str(),
+            "Nautilus (direct menu · requires nautilus-python)"
+        );
+        assert_eq!(
             menu.subtitle().as_deref(),
             Some("Not installed · Missing packages: nautilus, nautilus-python")
         );
+        let bulk = find_named(ui.0.window.upcast_ref(), "file-manager-bulk-menu")
+            .unwrap()
+            .downcast::<gtk::MenuButton>()
+            .unwrap();
+        assert!(!bulk.is_sensitive());
         let nemo = find_named(ui.0.window.upcast_ref(), "file-manager-nemo")
             .unwrap()
             .downcast::<adw::ActionRow>()
@@ -2974,14 +2999,21 @@ impl Ui {
         }
     }
     fn toast_text(&self, source: &str) {
+        self.toast_text_timeout(source, 3);
+    }
+    fn toast_text_timeout(&self, source: &str, seconds: u32) {
         let toast = adw::Toast::new("");
         i18n::bind_property(&toast, "title", source);
-        #[cfg(test)]
-        self.0.fixture_toasts.borrow_mut().push(toast.clone());
-        self.0.toast.add_toast(toast);
+        self.present_toast(toast, seconds);
     }
     fn toast(&self, text: &str) {
-        let toast = adw::Toast::new(text);
+        self.toast_with_timeout(text, 3);
+    }
+    fn toast_with_timeout(&self, text: &str, seconds: u32) {
+        self.present_toast(adw::Toast::new(text), seconds);
+    }
+    fn present_toast(&self, toast: adw::Toast, seconds: u32) {
+        toast.set_timeout(seconds);
         #[cfg(test)]
         self.0.fixture_toasts.borrow_mut().push(toast.clone());
         self.0.toast.add_toast(toast);

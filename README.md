@@ -182,6 +182,18 @@ Nautilus has two independent modes:
 Nemo uses a native `.nemo_action` file, so it adds **Send with LocalSend**
 directly to the context menu without Python or any extra bridge.
 
+The group header also exposes an **All** menu:
+
+- **Install all detected** installs only detected file managers with satisfied
+  dependencies. For Nautilus it chooses the direct menu when `nautilus-python`
+  is available, otherwise the Scripts mode, so only one Nautilus entry is
+  installed.
+- **Remove all** removes every installed, app-owned integration, including both
+  Nautilus modes when present.
+
+Both actions show a confirmation list and skip missing, conflicting or
+system-managed integrations.
+
 The app writes only below the user's data directory:
 
 - `${XDG_DATA_HOME:-$HOME/.local/share}/kio/servicemenus/localsend-dolphin.desktop`
@@ -305,7 +317,7 @@ launcher/icon ownership, and 14 browser tests, alongside formatting and
 warning-free Clippy checks. The separate Wayland interaction fixture runs in
 standard and high-contrast modes, including history, file manager integration
 states and receiving details at 360×540, live language changes, and cancellation
-confirmations for replaced sessions. The latest local run passed 127 application
+confirmations for replaced sessions. The latest local run passed 129 application
 tests (3 display/environment tests run separately), 175 vendored protocol tests
 (1 external-network test ignored), all 14 browser tests, isolated tray interactions,
 and both Wayland modes. Real desktop file-manager and GNOME/KDE portal integration

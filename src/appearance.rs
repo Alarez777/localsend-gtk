@@ -339,7 +339,8 @@ impl Palette {
              .localsend .outlined { color: @ls_outlined; }\n\
              .localsend textview, .localsend textview text { background: @ls_input; color: @ls_text; }\n\
              .localsend popover > contents { background: @ls_popover; color: @ls_text; }\n\
-             .localsend toast { background: @ls_toast; color: @ls_on_toast; }\n",
+             toast, .localsend toast { background: @ls_selected; color: @ls_text; border-radius: 12px; box-shadow: 0 2px 8px alpha(black, 0.18); }\n\
+             toast > widget { background: transparent; }\n",
         );
         if high_contrast {
             // Inset outlines strengthen boundaries without changing allocation

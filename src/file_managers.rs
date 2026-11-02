@@ -71,7 +71,7 @@ impl FileManagerIntegration {
         match self {
             Self::Dolphin => "Dolphin",
             Self::NautilusScript => "Nautilus (Scripts)",
-            Self::NautilusMenu => "Nautilus (direct menu)",
+            Self::NautilusMenu => "Nautilus (direct menu · requires nautilus-python)",
             Self::Nemo => "Nemo",
         }
     }
@@ -481,6 +481,66 @@ impl FileManagerIntegration {
 struct InstalledScript {
     path: PathBuf,
     owned: bool,
+}
+
+/// Integrations selected by "install all" for detected file managers.
+/// At most one Nautilus mode is returned so Nautilus does not show duplicate
+/// entries. A legacy installation is migrated with its own mode.
+pub fn bulk_install_candidates(environment: &Environment) -> Vec<FileManagerIntegration> {
+    if environment.flatpak {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    let dolphin = FileManagerIntegration::Dolphin.inspect(environment);
+    if bulk_installable(&dolphin) {
+        result.push(FileManagerIntegration::Dolphin);
+    }
+
+    let script = FileManagerIntegration::NautilusScript.inspect(environment);
+    let menu = FileManagerIntegration::NautilusMenu.inspect(environment);
+    let any_installed = [&script, &menu]
+        .iter()
+        .any(|status| status.state == InstallState::Installed);
+    if !any_installed {
+        let script_ok = bulk_installable(&script);
+        let menu_ok = bulk_installable(&menu);
+        if script.state == InstallState::Legacy && script_ok {
+            result.push(FileManagerIntegration::NautilusScript);
+        } else if menu_ok {
+            result.push(FileManagerIntegration::NautilusMenu);
+        } else if script_ok {
+            result.push(FileManagerIntegration::NautilusScript);
+        }
+    }
+
+    let nemo = FileManagerIntegration::Nemo.inspect(environment);
+    if bulk_installable(&nemo) {
+        result.push(FileManagerIntegration::Nemo);
+    }
+    result
+}
+
+fn bulk_installable(status: &Status) -> bool {
+    status.missing.is_empty()
+        && matches!(
+            status.state,
+            InstallState::NotInstalled | InstallState::Legacy
+        )
+}
+
+pub fn bulk_remove_candidates(environment: &Environment) -> Vec<FileManagerIntegration> {
+    if environment.flatpak {
+        return Vec::new();
+    }
+    FileManagerIntegration::ALL
+        .into_iter()
+        .filter(|integration| {
+            matches!(
+                integration.inspect(environment).state,
+                InstallState::Installed | InstallState::Legacy
+            )
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1245,6 +1305,93 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["nautilus"]
         );
+    }
+
+    #[test]
+    fn bulk_install_prefers_direct_menu_and_skips_missing_managers() {
+        let root = tempfile::tempdir().unwrap();
+        let mut environment = environment(
+            root.path(),
+            &["dolphin", "nautilus", "bash", "nemo"],
+            Locale::En,
+        );
+        environment.nautilus_python_available = Some(true);
+        assert_eq!(
+            bulk_install_candidates(&environment),
+            [
+                FileManagerIntegration::Dolphin,
+                FileManagerIntegration::NautilusMenu,
+                FileManagerIntegration::Nemo,
+            ]
+        );
+
+        environment.nautilus_python_available = Some(false);
+        assert_eq!(
+            bulk_install_candidates(&environment),
+            [
+                FileManagerIntegration::Dolphin,
+                FileManagerIntegration::NautilusScript,
+                FileManagerIntegration::Nemo,
+            ]
+        );
+
+        let no_nemo_root = tempfile::tempdir().unwrap();
+        let without_nemo = Environment::for_test(
+            no_nemo_root.path(),
+            &["dolphin", "nautilus", "bash"],
+            Locale::En,
+            false,
+        );
+        assert_eq!(
+            bulk_install_candidates(&without_nemo),
+            [
+                FileManagerIntegration::Dolphin,
+                FileManagerIntegration::NautilusScript,
+            ]
+        );
+
+        FileManagerIntegration::NautilusMenu
+            .install(&environment)
+            .unwrap();
+        assert!(!bulk_install_candidates(&environment)
+            .iter()
+            .any(|integration| matches!(
+                *integration,
+                FileManagerIntegration::NautilusScript | FileManagerIntegration::NautilusMenu
+            )));
+    }
+
+    #[test]
+    fn bulk_remove_collects_owned_modes_and_skips_foreign_files() {
+        let root = tempfile::tempdir().unwrap();
+        let environment = environment(
+            root.path(),
+            &["dolphin", "nautilus", "bash", "nemo"],
+            Locale::En,
+        );
+        for integration in [
+            FileManagerIntegration::Dolphin,
+            FileManagerIntegration::NautilusScript,
+            FileManagerIntegration::NautilusMenu,
+            FileManagerIntegration::Nemo,
+        ] {
+            integration.install(&environment).unwrap();
+        }
+        assert_eq!(
+            bulk_remove_candidates(&environment),
+            [
+                FileManagerIntegration::Dolphin,
+                FileManagerIntegration::NautilusScript,
+                FileManagerIntegration::NautilusMenu,
+                FileManagerIntegration::Nemo,
+            ]
+        );
+
+        let conflict = environment.clone();
+        let path = FileManagerIntegration::Dolphin.target(&conflict);
+        fs::remove_file(&path).unwrap();
+        fs::write(&path, "foreign").unwrap();
+        assert!(!bulk_remove_candidates(&conflict).contains(&FileManagerIntegration::Dolphin));
     }
 
     #[test]

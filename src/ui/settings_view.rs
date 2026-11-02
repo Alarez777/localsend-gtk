@@ -22,6 +22,9 @@ pub(super) struct NetworkControls {
 pub(super) struct FileManagerControls {
     environment: file_managers::Environment,
     rows: Vec<FileManagerRow>,
+    bulk_menu: gtk::MenuButton,
+    bulk_install: gtk::Button,
+    bulk_remove: gtk::Button,
 }
 
 pub(super) struct AppImageControls {
@@ -755,6 +758,57 @@ impl Ui {
             },
         );
 
+        let bulk_menu = gtk::MenuButton::builder()
+            .label("All")
+            .valign(gtk::Align::Center)
+            .build();
+        bulk_menu.set_widget_name("file-manager-bulk-menu");
+        bulk_menu.add_css_class("flat");
+        i18n::bind_property(&bulk_menu, "label", "All");
+        i18n::bind_property(
+            &bulk_menu,
+            "tooltip-text",
+            "Install or remove all file manager integrations",
+        );
+        i18n::bind_accessible_label(
+            &bulk_menu,
+            "Install or remove all file manager integrations",
+        );
+        let bulk_popover = gtk::Popover::new();
+        let bulk_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        margins(&bulk_box, 6);
+        let bulk_install = gtk::Button::with_label("");
+        bulk_install.set_widget_name("file-manager-install-all");
+        bulk_install.set_halign(gtk::Align::Fill);
+        bulk_install.add_css_class("flat");
+        i18n::bind_property(&bulk_install, "label", "Install all detected");
+        let bulk_remove = gtk::Button::with_label("");
+        bulk_remove.set_widget_name("file-manager-remove-all");
+        bulk_remove.set_halign(gtk::Align::Fill);
+        bulk_remove.add_css_class("flat");
+        i18n::bind_property(&bulk_remove, "label", "Remove all");
+        bulk_box.append(&bulk_install);
+        bulk_box.append(&bulk_remove);
+        bulk_popover.set_child(Some(&bulk_box));
+        bulk_menu.set_popover(Some(&bulk_popover));
+        {
+            let ui = self.clone();
+            let popover = bulk_popover.clone();
+            bulk_install.connect_clicked(move |_| {
+                popover.popdown();
+                ui.confirm_bulk_install();
+            });
+        }
+        {
+            let ui = self.clone();
+            let popover = bulk_popover.clone();
+            bulk_remove.connect_clicked(move |_| {
+                popover.popdown();
+                ui.confirm_bulk_remove();
+            });
+        }
+        group.set_header_suffix(Some(&bulk_menu));
+
         let mut rows = Vec::new();
         for integration in FileManagerIntegration::ALL {
             let row = adw::ActionRow::builder()
@@ -763,6 +817,7 @@ impl Ui {
                 .build();
             row.set_widget_name(&format!("file-manager-{}", integration.id()));
             i18n::bind_property(&row, "title", integration.title());
+            i18n::bind_property(&row, "tooltip-text", integration.title());
 
             let help = gtk::Button::from_icon_name("dialog-information-symbolic");
             help.set_valign(gtk::Align::Center);
@@ -798,8 +853,13 @@ impl Ui {
         }
 
         content.append(&group);
-        *self.0.file_manager_controls.borrow_mut() =
-            Some(FileManagerControls { environment, rows });
+        *self.0.file_manager_controls.borrow_mut() = Some(FileManagerControls {
+            environment,
+            rows,
+            bulk_menu,
+            bulk_install,
+            bulk_remove,
+        });
         self.reconcile_file_manager_integrations();
         self.refresh_file_manager_controls();
     }
@@ -967,16 +1027,19 @@ impl Ui {
         };
         match result {
             Ok(()) => {
-                self.toast_text(if installing {
+                let mut message = i18n::tr(if installing {
                     "Integration installed"
                 } else {
                     "Integration removed"
                 });
                 if integration == FileManagerIntegration::NautilusMenu {
-                    self.toast_text("Restart Nautilus to apply the menu change.");
+                    message.push(' ');
+                    message.push_str(&i18n::tr("Restart Nautilus to apply the menu change."));
                 } else if integration == FileManagerIntegration::Nemo {
-                    self.toast_text("Restart Nemo if the action does not appear.");
+                    message.push(' ');
+                    message.push_str(&i18n::tr("Restart Nemo if the menu does not update."));
                 }
+                self.toast(&message);
             }
             Err(error) => {
                 let heading = if installing {
@@ -1106,6 +1169,173 @@ impl Ui {
         }
     }
 
+    fn file_manager_environment(&self) -> Option<file_managers::Environment> {
+        self.0
+            .file_manager_controls
+            .borrow()
+            .as_ref()
+            .map(|controls| controls.environment.clone())
+    }
+
+    fn confirm_bulk_install(&self) {
+        let Some(environment) = self.file_manager_environment() else {
+            return;
+        };
+        let candidates = file_managers::bulk_install_candidates(&environment);
+        if candidates.is_empty() {
+            self.toast_text("No compatible file managers were detected.");
+            return;
+        }
+        self.confirm_bulk(candidates, true);
+    }
+
+    fn confirm_bulk_remove(&self) {
+        let Some(environment) = self.file_manager_environment() else {
+            return;
+        };
+        let candidates = file_managers::bulk_remove_candidates(&environment);
+        if candidates.is_empty() {
+            self.toast_text("No integrations are installed.");
+            return;
+        }
+        self.confirm_bulk(candidates, false);
+    }
+
+    fn confirm_bulk(&self, candidates: Vec<FileManagerIntegration>, installing: bool) {
+        let heading = if installing {
+            "Install all detected integrations"
+        } else {
+            "Remove all integrations"
+        };
+        let intro = if installing {
+            "The following integrations will be installed:"
+        } else {
+            "The following integrations will be removed:"
+        };
+        let names = candidates
+            .iter()
+            .map(|integration| i18n::tr(integration.title()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut body = format!("{}\n\n{}", i18n::tr(intro), names);
+        if installing {
+            body.push_str("\n\n");
+            body.push_str(&i18n::tr(
+                "Only detected file managers with available dependencies are included.",
+            ));
+        }
+        let dialog = translated_dialog(Some(heading), None);
+        dialog.set_body(&body);
+        add_response(&dialog, "cancel", "Cancel");
+        add_response(
+            &dialog,
+            "apply",
+            if installing { "Install" } else { "Remove" },
+        );
+        dialog.set_default_response(Some("apply"));
+        dialog.set_close_response("cancel");
+        let ui = self.clone();
+        dialog.connect_response(Some("apply"), move |dialog, _| {
+            dialog.close();
+            if installing {
+                ui.run_bulk_install(candidates.clone());
+            } else {
+                ui.run_bulk_remove(candidates.clone());
+            }
+        });
+        dialog.present(Some(&self.0.window));
+    }
+
+    fn run_bulk_install(&self, candidates: Vec<FileManagerIntegration>) {
+        let Some(environment) = self.file_manager_environment() else {
+            return;
+        };
+        let mut installed = 0;
+        let mut restart_nautilus = false;
+        let mut restart_nemo = false;
+        let mut errors = Vec::new();
+        for integration in candidates {
+            match integration.install(&environment) {
+                Ok(()) => {
+                    installed += 1;
+                    restart_nautilus |= integration == FileManagerIntegration::NautilusMenu;
+                    restart_nemo |= integration == FileManagerIntegration::Nemo;
+                }
+                Err(error) => errors.push(format!("{}: {}", i18n::tr(integration.title()), error)),
+            }
+        }
+        self.refresh_file_manager_controls();
+        if !errors.is_empty() {
+            alert(
+                &self.0.window,
+                "Could not install some integrations",
+                &errors.join("\n"),
+            );
+            return;
+        }
+        if installed > 0 {
+            let mut message = i18n::tr(if installed == 1 {
+                "Integration installed"
+            } else {
+                "Integrations installed"
+            });
+            if restart_nautilus {
+                message.push(' ');
+                message.push_str(&i18n::tr("Restart Nautilus to apply the menu change."));
+            }
+            if restart_nemo {
+                message.push(' ');
+                message.push_str(&i18n::tr("Restart Nemo if the menu does not update."));
+            }
+            self.toast(&message);
+        }
+    }
+
+    fn run_bulk_remove(&self, candidates: Vec<FileManagerIntegration>) {
+        let Some(environment) = self.file_manager_environment() else {
+            return;
+        };
+        let mut removed = 0;
+        let mut restart_nautilus = false;
+        let mut restart_nemo = false;
+        let mut errors = Vec::new();
+        for integration in candidates {
+            match integration.remove(&environment) {
+                Ok(()) => {
+                    removed += 1;
+                    restart_nautilus |= integration == FileManagerIntegration::NautilusMenu;
+                    restart_nemo |= integration == FileManagerIntegration::Nemo;
+                }
+                Err(error) => errors.push(format!("{}: {}", i18n::tr(integration.title()), error)),
+            }
+        }
+        self.refresh_file_manager_controls();
+        if !errors.is_empty() {
+            alert(
+                &self.0.window,
+                "Could not remove some integrations",
+                &errors.join("\n"),
+            );
+            return;
+        }
+        if removed > 0 {
+            let mut message = i18n::tr(if removed == 1 {
+                "Integration removed"
+            } else {
+                "Integrations removed"
+            });
+            if restart_nautilus {
+                message.push(' ');
+                message.push_str(&i18n::tr("Restart Nautilus to apply the menu change."));
+            }
+            if restart_nemo {
+                message.push(' ');
+                message.push_str(&i18n::tr("Restart Nemo if the menu does not update."));
+            }
+            self.toast(&message);
+        }
+    }
+
     pub(super) fn refresh_file_manager_controls(&self) {
         let app_language = self.0.settings.borrow().language;
         let refreshed = if self.0.offline_fixture {
@@ -1121,6 +1351,18 @@ impl Ui {
             controls.environment = environment;
         }
         let flatpak = controls.environment.is_flatpak();
+        let install_candidates = file_managers::bulk_install_candidates(&controls.environment);
+        let remove_candidates = file_managers::bulk_remove_candidates(&controls.environment);
+        controls.bulk_menu.set_visible(!flatpak);
+        controls
+            .bulk_menu
+            .set_sensitive(!install_candidates.is_empty() || !remove_candidates.is_empty());
+        controls
+            .bulk_install
+            .set_sensitive(!install_candidates.is_empty());
+        controls
+            .bulk_remove
+            .set_sensitive(!remove_candidates.is_empty());
         for entry in &controls.rows {
             if flatpak {
                 i18n::bind_property(&entry.row, "subtitle", "Not available in Flatpak");

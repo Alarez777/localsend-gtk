@@ -32,6 +32,7 @@
 .localsend .outlined { border: 1px solid @ls_outline; border-radius: 24px; padding: 8px 18px; background: transparent; color: @ls_primary; box-shadow: none; }
 .localsend .outlined:hover { background: alpha(@ls_primary, 0.08); }
 .localsend .outlined:disabled { opacity: 0.55; }
+.localsend button:disabled, .localsend menubutton:disabled { opacity: 0.55; }
 .localsend .section-title { font-size: 16px; font-weight: 500; }
 .localsend .page-title { font-size: 22px; font-weight: 400; }
 .localsend .body-text { font-size: 14px; }
