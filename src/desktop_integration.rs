@@ -111,6 +111,10 @@ pub fn inspect(context: &Context) -> Status {
 }
 
 pub fn install(context: &Context, app_language: Locale) -> Result<(), Error> {
+    install_with_locale(context, i18n::integration_locale(app_language))
+}
+
+fn install_with_locale(context: &Context, locale: Locale) -> Result<(), Error> {
     let desktop = context.desktop_path();
     if let Ok(contents) = fs::read_to_string(&desktop) {
         let keyfile = glib::KeyFile::new();
@@ -134,7 +138,7 @@ pub fn install(context: &Context, app_language: Locale) -> Result<(), Error> {
     }
 
     let exec = format!("{} %U", desktop_exec_argument(&context.appimage)?);
-    let action_names = action_names(app_language);
+    let action_names = action_names(locale);
     let contents = format!(
         "[Desktop Entry]\nType=Application\nName=LocalSend GTK\nGenericName=File Transfer\nComment=An open source cross-platform alternative to AirDrop (GTK4/Wayland)\nExec={exec}\nIcon={ICON_NAME}\nTerminal=false\nStartupNotify=true\nStartupWMClass={APP_ID}\nCategories=Network;FileTransfer;\nMimeType=application/octet-stream;inode/directory;\nKeywords=localsend;airdrop;transfer;sharing;lan;network;gtk;\nX-Wayland-Native=true\nX-AppImage-Name=LocalSend GTK\nActions=SendWithLocalSend;\n{OWNER_KEY}={APP_ID}\n\n[Desktop Action SendWithLocalSend]\n{action_names}Exec={exec}\n",
     );
@@ -176,17 +180,18 @@ pub fn remove(context: &Context) -> Result<(), Error> {
 
 /// Refresh an installed launcher after a language change.
 pub fn reconcile(context: &Context, app_language: Locale) -> Result<(), Error> {
+    reconcile_with_locale(context, i18n::integration_locale(app_language))
+}
+
+fn reconcile_with_locale(context: &Context, locale: Locale) -> Result<(), Error> {
     if inspect(context).state == State::Installed {
-        install(context, app_language)?;
+        install_with_locale(context, locale)?;
     }
     Ok(())
 }
 
-fn action_names(app_language: Locale) -> String {
-    let fallback = i18n::tr_for(
-        i18n::integration_locale(app_language),
-        "Send with LocalSend",
-    );
+fn action_names(locale: Locale) -> String {
+    let fallback = i18n::tr_for(locale, "Send with LocalSend");
     let mut result = format!("Name={fallback}\n");
     for locale in Locale::ALL {
         let Some(key) = desktop_locale(locale) else {
@@ -340,8 +345,8 @@ mod tests {
     fn reconcile_updates_the_localized_action_name() {
         let root = tempfile::tempdir().unwrap();
         let context = context(root.path());
-        install(&context, Locale::En).unwrap();
-        reconcile(&context, Locale::Es).unwrap();
+        install_with_locale(&context, Locale::En).unwrap();
+        reconcile_with_locale(&context, Locale::Es).unwrap();
         let desktop = fs::read_to_string(context.desktop_path()).unwrap();
         assert!(desktop.contains("Name=Enviar con LocalSend"));
     }

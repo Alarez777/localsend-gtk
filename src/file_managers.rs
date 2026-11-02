@@ -1013,14 +1013,8 @@ mod tests {
             .load_from_data(&contents, glib::KeyFileFlags::NONE)
             .unwrap();
         assert_eq!(keyfile.string("Nemo Action", OWNER_KEY).unwrap(), APP_ID);
-        assert_eq!(
-            keyfile.string("Nemo Action", "Name[es]").unwrap(),
-            "Enviar con LocalSend"
-        );
-        assert_eq!(
-            keyfile.string("Nemo Action", "Comment[es]").unwrap(),
-            "Enviar con LocalSend"
-        );
+        assert!(contents.contains("Name[es]=Enviar con LocalSend\n"));
+        assert!(contents.contains("Comment[es]=Enviar con LocalSend\n"));
         assert_eq!(keyfile.string("Nemo Action", "Quote").unwrap(), "double");
         assert_eq!(keyfile.string("Nemo Action", "Extensions").unwrap(), "any;");
         let exec = keyfile.string("Nemo Action", "Exec").unwrap();
