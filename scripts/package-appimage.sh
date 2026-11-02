@@ -49,12 +49,19 @@ mkdir -p "$APPDIR/usr/bin" \
 
 install -m 755 "$BIN" "$APPDIR/usr/bin/localsend-gtk"
 install -m 755 packaging/appimage/AppRun "$APPDIR/AppRun"
-install -m 644 packaging/rpm/localsend-gtk.desktop \
-    "$APPDIR/org.localsend.localsend_gtk.desktop"
-install -m 644 packaging/rpm/localsend-gtk.desktop \
+# AppImage tools and desktop environments resolve the embedded icon by the
+# desktop file's Icon key. Keep the native alias too for the file manager.
+sed 's/^Icon=.*/Icon=org.localsend.localsend_gtk/' \
+    packaging/rpm/localsend-gtk.desktop > "$APPDIR/org.localsend.localsend_gtk.desktop"
+install -m 644 "$APPDIR/org.localsend.localsend_gtk.desktop" \
     "$APPDIR/usr/share/applications/org.localsend.localsend_gtk.desktop"
+install -m 644 assets/logo.png "$APPDIR/org.localsend.localsend_gtk.png"
 install -m 644 assets/logo.png "$APPDIR/localsend-gtk.png"
-install -m 644 assets/logo.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/localsend-gtk.png"
+ln -sfn org.localsend.localsend_gtk.png "$APPDIR/.DirIcon"
+install -m 644 assets/logo.png \
+    "$APPDIR/usr/share/icons/hicolor/512x512/apps/org.localsend.localsend_gtk.png"
+install -m 644 assets/logo.png \
+    "$APPDIR/usr/share/icons/hicolor/512x512/apps/localsend-gtk.png"
 install -m 644 packaging/flatpak/org.localsend.localsend_gtk.metainfo.xml \
     "$APPDIR/usr/share/metainfo/org.localsend.localsend_gtk.appdata.xml"
 install -m 644 README.md LICENSE THIRD_PARTY_NOTICES.md \

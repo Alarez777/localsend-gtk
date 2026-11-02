@@ -667,7 +667,7 @@ mod tests {
             dolphin.subtitle().as_deref(),
             Some("Not installed · Missing packages: dolphin")
         );
-        let nautilus = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus")
+        let nautilus = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus-script")
             .unwrap()
             .downcast::<adw::ActionRow>()
             .unwrap();
@@ -675,8 +675,42 @@ mod tests {
             nautilus.subtitle().as_deref(),
             Some("Not installed · Missing packages: nautilus, bash")
         );
+        let menu = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus-menu")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            menu.subtitle().as_deref(),
+            Some("Not installed · Missing packages: nautilus, nautilus-python")
+        );
+        let nemo = find_named(ui.0.window.upcast_ref(), "file-manager-nemo")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            nemo.subtitle().as_deref(),
+            Some("Not installed · Missing packages: nemo")
+        );
         let install = find_button(dolphin.upcast_ref(), "Install").unwrap();
         assert!(!install.is_sensitive());
+        let help = find_tooltip(menu.upcast_ref(), "How to install")
+            .unwrap()
+            .downcast::<gtk::Button>()
+            .unwrap();
+        help.emit_clicked();
+        settle();
+        let dialog =
+            ui.0.window
+                .visible_dialog()
+                .unwrap()
+                .downcast::<adw::AlertDialog>()
+                .unwrap();
+        assert_eq!(
+            dialog.heading().as_deref(),
+            Some("Install missing dependencies")
+        );
+        dialog.force_close();
+        settle();
 
         i18n::set_locale(i18n::Locale::Es);
         assert_eq!(
@@ -1776,13 +1810,29 @@ mod tests {
             dolphin.subtitle().as_deref(),
             Some("Not installed · Missing packages: dolphin")
         );
-        let nautilus = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus")
+        let nautilus = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus-script")
             .unwrap()
             .downcast::<adw::ActionRow>()
             .unwrap();
         assert_eq!(
             nautilus.subtitle().as_deref(),
             Some("Not installed · Missing packages: nautilus, bash")
+        );
+        let menu = find_named(ui.0.window.upcast_ref(), "file-manager-nautilus-menu")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            menu.subtitle().as_deref(),
+            Some("Not installed · Missing packages: nautilus, nautilus-python")
+        );
+        let nemo = find_named(ui.0.window.upcast_ref(), "file-manager-nemo")
+            .unwrap()
+            .downcast::<adw::ActionRow>()
+            .unwrap();
+        assert_eq!(
+            nemo.subtitle().as_deref(),
+            Some("Not installed · Missing packages: nemo")
         );
         show_settings_group(&ui, "general");
         let language = find_combo(ui.0.window.upcast_ref(), "Language").unwrap();
@@ -1948,8 +1998,14 @@ mod tests {
 
 pub fn install_styles() {
     gio::resources_register_include!("localsend.gresource").expect("Bundled icons");
-    gtk::IconTheme::for_display(&gdk::Display::default().expect("No display"))
-        .add_resource_path("/org/localsend/localsend_gtk/assets/icons");
+    let icon_theme = gtk::IconTheme::for_display(&gdk::Display::default().expect("No display"));
+    icon_theme.add_resource_path("/org/localsend/localsend_gtk/assets/icons");
+    if let Some(appdir) = std::env::var_os("APPDIR") {
+        let icons = PathBuf::from(appdir).join("usr/share/icons");
+        if icons.is_dir() {
+            icon_theme.add_search_path(&icons);
+        }
+    }
     let provider = gtk::CssProvider::new();
     provider.load_from_string(include_str!("../assets/css/style.css"));
     gtk::style_context_add_provider_for_display(
@@ -1971,6 +2027,7 @@ struct Inner {
     appearance: crate::appearance::Appearance,
     network_controls: RefCell<Option<settings_view::NetworkControls>>,
     file_manager_controls: RefCell<Option<settings_view::FileManagerControls>>,
+    appimage_controls: RefCell<Option<settings_view::AppImageControls>>,
     selection: RefCell<Vec<Selection>>,
     selection_generation: Cell<u64>,
     selection_request_counter: Cell<u64>,
@@ -2140,6 +2197,13 @@ pub fn build(app: &adw::Application, mut settings: Settings, offline_fixture: bo
         .default_height(700)
         .build();
     i18n::bind_property(&window, "title", "LocalSend");
+    window.set_icon_name(Some(
+        if crate::desktop_integration::appimage_path().is_some() {
+            "org.localsend.localsend_gtk"
+        } else {
+            "localsend-gtk"
+        },
+    ));
     window.add_css_class("localsend");
     if settings.oled {
         window.add_css_class("oled");
@@ -2474,6 +2538,7 @@ pub fn build(app: &adw::Application, mut settings: Settings, offline_fixture: bo
         appearance,
         network_controls: RefCell::new(None),
         file_manager_controls: RefCell::new(None),
+        appimage_controls: RefCell::new(None),
         selection: RefCell::new(Vec::new()),
         selection_generation: Cell::new(0),
         selection_request_counter: Cell::new(0),

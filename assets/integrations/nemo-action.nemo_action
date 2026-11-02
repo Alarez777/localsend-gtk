@@ -1,0 +1,8 @@
+[Nemo Action]
+@LOCALSEND_GTK_NAMES@@LOCALSEND_GTK_COMMENTS@Exec=@LOCALSEND_GTK_EXEC@
+Icon-Name=@LOCALSEND_GTK_ICON@
+Selection=notnone
+Extensions=any;
+Quote=double
+Terminal=false
+X-LocalSend-GTK-Owner=org.localsend.localsend_gtk

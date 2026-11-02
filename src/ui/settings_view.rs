@@ -1,5 +1,6 @@
 use super::*;
 use crate::appearance::{Color, ColorMode};
+use crate::desktop_integration;
 use crate::file_managers::{self, FileManagerIntegration, InstallState, IntegrationError};
 use crate::i18n::{self, Locale};
 use crate::settings::QuickSaveMode;
@@ -23,10 +24,17 @@ pub(super) struct FileManagerControls {
     rows: Vec<FileManagerRow>,
 }
 
+pub(super) struct AppImageControls {
+    context: desktop_integration::Context,
+    row: adw::ActionRow,
+    button: gtk::Button,
+}
+
 struct FileManagerRow {
     integration: FileManagerIntegration,
     row: adw::ActionRow,
     button: gtk::Button,
+    help: gtk::Button,
 }
 
 const ALL_COLOR_MODES: [ColorMode; 5] = [
@@ -362,6 +370,10 @@ impl Ui {
                 ui.0.settings.borrow_mut().language = locale;
                 if ui.save_settings() {
                     i18n::set_locale(locale);
+                    ui.reconcile_file_manager_integrations();
+                    ui.refresh_file_manager_controls();
+                    ui.reconcile_appimage_integration();
+                    ui.refresh_appimage_controls();
                 } else {
                     ui.0.settings.borrow_mut().language = previous;
                     row.set_selected(
@@ -618,6 +630,7 @@ impl Ui {
         send.add(&approve);
         content.append(&send);
         self.file_manager_settings(&content);
+        self.appimage_settings(&content);
         let network = adw::PreferencesGroup::new();
         network.set_widget_name("settings-network");
         i18n::bind_property(&network, "title", "Network");
@@ -713,10 +726,11 @@ impl Ui {
         group.set_widget_name("settings-file-managers");
         i18n::bind_property(&group, "title", "File manager integrations");
 
+        let app_language = self.0.settings.borrow().language;
         let environment = if self.0.offline_fixture {
-            Ok(file_managers::Environment::fixture())
+            Ok(file_managers::Environment::fixture(app_language))
         } else {
-            file_managers::Environment::current()
+            file_managers::Environment::current(app_language)
         };
         let environment = match environment {
             Ok(environment) => environment,
@@ -750,6 +764,19 @@ impl Ui {
             row.set_widget_name(&format!("file-manager-{}", integration.id()));
             i18n::bind_property(&row, "title", integration.title());
 
+            let help = gtk::Button::from_icon_name("dialog-information-symbolic");
+            help.set_valign(gtk::Align::Center);
+            help.add_css_class("flat");
+            help.set_visible(false);
+            i18n::bind_property(&help, "tooltip-text", "How to install");
+            i18n::bind_accessible_label(&help, "How to install");
+            {
+                let ui = self.clone();
+                help.connect_clicked(move |_| {
+                    ui.show_missing_dependencies(integration);
+                });
+            }
+
             let button = gtk::Button::with_label("");
             button.set_valign(gtk::Align::Center);
             button.add_css_class("flat");
@@ -759,19 +786,155 @@ impl Ui {
                     ui.toggle_file_manager_integration(integration);
                 });
             }
+            row.add_suffix(&help);
             row.add_suffix(&button);
             group.add(&row);
             rows.push(FileManagerRow {
                 integration,
                 row,
                 button,
+                help,
             });
         }
 
         content.append(&group);
         *self.0.file_manager_controls.borrow_mut() =
             Some(FileManagerControls { environment, rows });
+        self.reconcile_file_manager_integrations();
         self.refresh_file_manager_controls();
+    }
+
+    fn appimage_settings(&self, content: &gtk::Box) {
+        let Some(context) = desktop_integration::Context::current() else {
+            *self.0.appimage_controls.borrow_mut() = None;
+            return;
+        };
+        let group = adw::PreferencesGroup::new();
+        group.set_widget_name("settings-desktop-integration");
+        i18n::bind_property(&group, "title", "Desktop integration");
+        i18n::bind_property(
+            &group,
+            "description",
+            "Install a launcher and icon for this AppImage in the application menu.",
+        );
+        let row = adw::ActionRow::builder()
+            .title("Application menu and icon")
+            .build();
+        i18n::bind_property(&row, "title", "Application menu and icon");
+        let button = gtk::Button::with_label("");
+        button.set_valign(gtk::Align::Center);
+        button.add_css_class("flat");
+        {
+            let ui = self.clone();
+            button.connect_clicked(move |_| ui.toggle_appimage_integration());
+        }
+        row.add_suffix(&button);
+        group.add(&row);
+        content.append(&group);
+        *self.0.appimage_controls.borrow_mut() = Some(AppImageControls {
+            context,
+            row,
+            button,
+        });
+        self.reconcile_appimage_integration();
+        self.refresh_appimage_controls();
+    }
+
+    fn toggle_appimage_integration(&self) {
+        let (context, installed) = {
+            let controls = self.0.appimage_controls.borrow();
+            let Some(controls) = controls.as_ref() else {
+                return;
+            };
+            (
+                controls.context.clone(),
+                desktop_integration::inspect(&controls.context).state
+                    == desktop_integration::State::Installed,
+            )
+        };
+        let app_language = self.0.settings.borrow().language;
+        let result = if installed {
+            desktop_integration::remove(&context)
+        } else {
+            desktop_integration::install(&context, app_language)
+        };
+        match result {
+            Ok(()) => self.toast_text(if installed {
+                "Application menu entry removed"
+            } else {
+                "Application menu entry installed"
+            }),
+            Err(error) => {
+                let heading = if installed {
+                    "Could not remove the application menu entry"
+                } else {
+                    "Could not install the application menu entry"
+                };
+                let body = match &error {
+                    desktop_integration::Error::Conflict => {
+                        i18n::tr("A file not created by LocalSend already uses this name.")
+                    }
+                    desktop_integration::Error::Io(error) => error.to_string(),
+                };
+                alert(&self.0.window, heading, &body);
+            }
+        }
+        self.refresh_appimage_controls();
+    }
+
+    pub(super) fn reconcile_appimage_integration(&self) {
+        let (context, app_language) = {
+            let controls = self.0.appimage_controls.borrow();
+            let Some(controls) = controls.as_ref() else {
+                return;
+            };
+            (controls.context.clone(), self.0.settings.borrow().language)
+        };
+        if let Err(error) = desktop_integration::reconcile(&context, app_language) {
+            tracing::warn!(%error, "Could not reconcile the AppImage desktop entry");
+        }
+    }
+
+    fn refresh_appimage_controls(&self) {
+        let controls = self.0.appimage_controls.borrow();
+        let Some(controls) = controls.as_ref() else {
+            return;
+        };
+        let status = desktop_integration::inspect(&controls.context);
+        match status.state {
+            desktop_integration::State::Installed => {
+                i18n::bind_property(&controls.row, "subtitle", "Installed");
+                controls.button.set_visible(true);
+                controls.button.set_sensitive(true);
+                i18n::bind_property(&controls.button, "label", "Remove");
+            }
+            desktop_integration::State::NotInstalled => {
+                i18n::bind_property(&controls.row, "subtitle", "Not installed");
+                controls.button.set_visible(true);
+                controls.button.set_sensitive(true);
+                i18n::bind_property(&controls.button, "label", "Install");
+            }
+            desktop_integration::State::Conflict => {
+                i18n::bind_property(
+                    &controls.row,
+                    "subtitle",
+                    "A file not created by LocalSend already uses this name.",
+                );
+                controls.button.set_visible(false);
+            }
+            desktop_integration::State::Unknown => {
+                i18n::bind_format_property(
+                    &controls.row,
+                    "subtitle",
+                    "Could not check this integration: {error}",
+                    &[(
+                        "error",
+                        status.error.unwrap_or_else(|| "Unknown error".into()),
+                    )],
+                );
+                controls.button.set_visible(false);
+            }
+        }
     }
 
     fn toggle_file_manager_integration(&self, integration: FileManagerIntegration) {
@@ -803,11 +966,18 @@ impl Ui {
             integration.remove(&environment)
         };
         match result {
-            Ok(()) => self.toast_text(if installing {
-                "Integration installed"
-            } else {
-                "Integration removed"
-            }),
+            Ok(()) => {
+                self.toast_text(if installing {
+                    "Integration installed"
+                } else {
+                    "Integration removed"
+                });
+                if integration == FileManagerIntegration::NautilusMenu {
+                    self.toast_text("Restart Nautilus to apply the menu change.");
+                } else if integration == FileManagerIntegration::Nemo {
+                    self.toast_text("Restart Nemo if the action does not appear.");
+                }
+            }
             Err(error) => {
                 let heading = if installing {
                     "Could not install the integration"
@@ -832,23 +1002,143 @@ impl Ui {
         self.refresh_file_manager_controls();
     }
 
-    pub(super) fn refresh_file_manager_controls(&self) {
-        let controls = self.0.file_manager_controls.borrow();
-        let Some(controls) = controls.as_ref() else {
+    fn show_missing_dependencies(&self, integration: FileManagerIntegration) {
+        let environment = self
+            .0
+            .file_manager_controls
+            .borrow()
+            .as_ref()
+            .map(|controls| controls.environment.clone());
+        let Some(environment) = environment else {
             return;
         };
+        let status = integration.inspect(&environment);
+        if status.missing.is_empty() {
+            return;
+        }
+        let packages = status
+            .missing
+            .iter()
+            .map(|requirement| requirement.package())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let manager = crate::distro::PackageManager::detect();
+        let command = manager.install_command(&status.missing);
+
+        let dialog = translated_dialog(
+            Some("Install missing dependencies"),
+            Some("This integration needs extra packages. Install them with your system package manager, then reopen Settings."),
+        );
+        add_response(&dialog, "close", "Close");
+        dialog.set_close_response("close");
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        if let Some(command) = command {
+            let heading = translated_label("Suggested command", "dim-label");
+            content.append(&heading);
+            let command_label = gtk::Label::new(Some(&command));
+            command_label.set_selectable(true);
+            command_label.set_wrap(true);
+            command_label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+            command_label.set_xalign(0.0);
+            command_label.add_css_class("monospace");
+            content.append(&command_label);
+            let copy = gtk::Button::with_label("");
+            i18n::bind_property(&copy, "label", "Copy command");
+            {
+                let ui = self.clone();
+                let command = command.clone();
+                copy.connect_clicked(move |_| {
+                    ui.0.window.clipboard().set_text(&command);
+                    ui.toast_text("Command copied");
+                });
+            }
+            content.append(&copy);
+        } else {
+            let label = gtk::Label::new(None);
+            i18n::bind_format_property(
+                &label,
+                "label",
+                "No package manager was detected. Install these packages manually: {packages}",
+                &[("packages", packages)],
+            );
+            label.set_wrap(true);
+            label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+            label.set_xalign(0.0);
+            content.append(&label);
+        }
+        dialog.set_extra_child(Some(&content));
+        dialog.present(Some(&self.0.window));
+    }
+
+    pub(super) fn reconcile_file_manager_integrations(&self) {
+        let app_language = self.0.settings.borrow().language;
+        let refreshed = if self.0.offline_fixture {
+            Ok(file_managers::Environment::fixture(app_language))
+        } else {
+            file_managers::Environment::current(app_language)
+        };
+        let (environment, integrations) = {
+            let mut controls = self.0.file_manager_controls.borrow_mut();
+            let Some(controls) = controls.as_mut() else {
+                return;
+            };
+            if let Ok(environment) = refreshed {
+                controls.environment = environment;
+            }
+            (
+                controls.environment.clone(),
+                controls
+                    .rows
+                    .iter()
+                    .map(|row| row.integration)
+                    .collect::<Vec<_>>(),
+            )
+        };
+        for integration in integrations {
+            if let Err(error) = integration.reconcile(&environment) {
+                tracing::warn!(
+                    ?integration,
+                    %error,
+                    "Could not reconcile a file manager integration"
+                );
+            }
+        }
+    }
+
+    pub(super) fn refresh_file_manager_controls(&self) {
+        let app_language = self.0.settings.borrow().language;
+        let refreshed = if self.0.offline_fixture {
+            Ok(file_managers::Environment::fixture(app_language))
+        } else {
+            file_managers::Environment::current(app_language)
+        };
+        let mut controls = self.0.file_manager_controls.borrow_mut();
+        let Some(controls) = controls.as_mut() else {
+            return;
+        };
+        if let Ok(environment) = refreshed {
+            controls.environment = environment;
+        }
         let flatpak = controls.environment.is_flatpak();
         for entry in &controls.rows {
             if flatpak {
                 i18n::bind_property(&entry.row, "subtitle", "Not available in Flatpak");
                 entry.button.set_visible(false);
+                entry.help.set_visible(false);
                 continue;
             }
             let status = entry.integration.inspect(&controls.environment);
+            let show_help = !status.missing.is_empty()
+                && matches!(
+                    status.state,
+                    InstallState::NotInstalled | InstallState::Installed | InstallState::Legacy
+                );
+            entry.help.set_visible(show_help);
             let packages = status
                 .missing
                 .iter()
-                .map(|requirement| requirement.package)
+                .map(|requirement| requirement.package())
                 .collect::<Vec<_>>()
                 .join(", ");
             match status.state {

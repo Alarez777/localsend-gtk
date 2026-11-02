@@ -91,11 +91,36 @@ impl Locale {
         }
         // GLib honors LANGUAGE/LC_ALL/LC_MESSAGES/LANG on Linux and the user's
         // locale on Windows. Unsupported languages fall back to English.
-        glib::language_names()
-            .iter()
-            .find_map(|tag| Self::from_language_tag(tag))
-            .unwrap_or(Self::En)
+        Self::from_system().unwrap_or(Self::En)
     }
+
+    /// The desktop locale when it is one this client supports. Unlike
+    /// `resolve`, this distinguishes English from an unsupported locale.
+    pub fn from_system() -> Option<Self> {
+        Self::from_language_names(glib::language_names().iter().map(|tag| tag.as_str()))
+    }
+
+    fn from_language_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<Self> {
+        names
+            .into_iter()
+            // GLib appends C as a sentinel even when the real locale is
+            // unsupported. It must not turn that case into English.
+            .filter(|tag| !matches!(*tag, "C" | "POSIX"))
+            .find_map(Self::from_language_tag)
+    }
+}
+
+/// File manager menus belong to the desktop, so prefer its locale. When the
+/// desktop locale is unsupported, use the language chosen in the app instead.
+pub fn integration_locale(app_language: Locale) -> Locale {
+    integration_locale_for(Locale::from_system(), app_language)
+}
+
+fn integration_locale_for(system: Option<Locale>, app_language: Locale) -> Locale {
+    system.unwrap_or(match app_language {
+        Locale::System => Locale::En,
+        selected => selected,
+    })
 }
 
 #[derive(Clone, Deserialize)]
@@ -307,6 +332,10 @@ pub fn is_updating() -> bool {
 
 pub fn tr(source: &str) -> String {
     translate(current(), source)
+}
+
+pub fn tr_for(locale: Locale, source: &str) -> String {
+    translate(locale, source)
 }
 
 pub fn tr_format(source: &str, arguments: &[(&str, String)]) -> String {
@@ -581,6 +610,31 @@ mod tests {
             .skip(1)
             .filter_map(|part| part.split_once('}').map(|(name, _)| name))
             .collect()
+    }
+
+    #[test]
+    fn system_language_ignores_the_c_sentinel() {
+        assert_eq!(
+            Locale::from_language_names(["es_MX", "es", "C"]),
+            Some(Locale::Es)
+        );
+        assert_eq!(
+            Locale::from_language_names(["en_US", "en", "C"]),
+            Some(Locale::En)
+        );
+        assert_eq!(Locale::from_language_names(["pt_BR", "pt", "C"]), None);
+        assert_eq!(Locale::from_language_names(["it_IT", "it", "C"]), None);
+        assert_eq!(Locale::from_language_names(["C"]), None);
+    }
+
+    #[test]
+    fn integration_locale_prefers_supported_desktop_and_falls_back_to_app() {
+        assert_eq!(
+            integration_locale_for(Some(Locale::Es), Locale::En),
+            Locale::Es
+        );
+        assert_eq!(integration_locale_for(None, Locale::Es), Locale::Es);
+        assert_eq!(integration_locale_for(None, Locale::System), Locale::En);
     }
 
     #[test]

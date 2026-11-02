@@ -82,14 +82,19 @@ need not be pixel-for-pixel identical across different toolkits.
   Completed files are retained; unfinished files are cleaned up before confirmation.
 - Optional desktop tray with navigation and Quit, minimize-to-tray and XDG autostart.
   If the desktop has no tray host, the window remains accessible.
-- Optional per-user Dolphin and Nautilus **Send with LocalSend** integrations.
-  Settings shows whether each file manager and its required packages are present,
-  installs one only on request, and can remove it again. Packages no longer install
-  these integrations automatically.
-- General/Receive/Send/File manager integrations/Network settings, live
-  language/theme controls, and receiver Start/Restart/Stop with pending-restart
-  feedback. Listener restarts preserve TLS identity and stopping revokes browser
-  links and pending offers.
+- Optional per-user Dolphin, Nautilus and Nemo **Send with LocalSend**
+  integrations. Nautilus is available as a no-Python **Scripts** action or an
+  optional direct context-menu extension using `nautilus-python`; Nemo uses its
+  native action format without Python. Settings shows whether each
+  file manager, Python bridge and package is present, installs only what is
+  requested, and can remove it again. Integrations follow the desktop language,
+  falling back to the app language when the desktop locale is unsupported.
+- Optional AppImage desktop entry and icon under Settings → Desktop integration.
+  The launcher points at the outer `.AppImage` so it survives the temporary mount.
+- General/Receive/Send/File manager integrations/Desktop integration/Network
+  settings, live language/theme controls, and receiver Start/Restart/Stop with
+  pending-restart feedback. Listener restarts preserve TLS identity and stopping
+  revokes browser links and pending offers.
 - Persisted device name, theme, language, save folder, port, animations, Quick save,
   Save to history, receive PIN, favorites and send mode. Apply network changes while idle
   without restarting the application.
@@ -163,18 +168,42 @@ installer. Open **Settings → File manager integrations** and install the
 **Send with LocalSend** action for Dolphin (KDE Frameworks 5.85 or newer) or
 Nautilus (GNOME Files) for the current user. The same section removes it again.
 
+Nautilus has two independent modes:
+
+- **Scripts**: no Python required. Nautilus displays the localized script under
+  **Scripts → Send with LocalSend**.
+- **Direct menu**: adds the action directly to the context menu. It requires the
+  distribution's `nautilus-python` bridge (`python3-nautilus` and `python3-gi`
+  on Debian/Ubuntu, `nautilus-python` and `python3-gobject` on Fedora, or
+  `python-nautilus` and `python-gobject` on Arch). Settings detects the bridge
+  and offers the package-manager command when it is missing. Restart Nautilus
+  after installing or removing this extension.
+
+Nemo uses a native `.nemo_action` file, so it adds **Send with LocalSend**
+directly to the context menu without Python or any extra bridge.
+
 The app writes only below the user's data directory:
 
 - `${XDG_DATA_HOME:-$HOME/.local/share}/kio/servicemenus/localsend-dolphin.desktop`
-- `${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts/Send with LocalSend`
+- `${XDG_DATA_HOME:-$HOME/.local/share}/nautilus/scripts/<localized Send with LocalSend>`
+- `${XDG_DATA_HOME:-$HOME/.local/share}/nautilus-python/extensions/localsend-gtk.py`
+- `${XDG_DATA_HOME:-$HOME/.local/share}/nemo/actions/localsend-gtk.nemo_action`
 
 No administrator access is required. If a required file manager or package is
-missing, the row names the package to install and keeps the action disabled.
-Integrations installed system-wide by an older package are shown as managed by
-the package manager and are not deleted from the app. An older tar installation
-may leave copies under its prefix; remove those manually if they are no longer
-wanted. The Flatpak sandbox cannot write to the host's data directories, so
-these integrations are unavailable there.
+missing, the row names the package, keeps the action disabled and offers an
+installation-command dialog. Integrations follow the desktop locale; when that
+locale is not one of the bundled languages, they use the language selected in
+the app. Integrations installed system-wide by an older package are shown as
+managed by the package manager and are not deleted from the app. An older tar
+installation may leave copies under its prefix; remove those manually if they
+are no longer wanted. The Flatpak sandbox cannot write to the host's data
+directories, so these integrations are unavailable there.
+
+When running the AppImage, **Settings → Desktop integration** can install a
+user launcher and icon for the AppImage. This makes the icon appear in the
+application menu and dock. The file icon shown by Nautilus for the `.AppImage`
+file itself still depends on AppImageLauncher, Gearlever or a compatible
+thumbnailer.
 
 For the tar archive, run `sudo ./install.sh` to install under `/usr/local`, or
 `./install.sh "$HOME/.local"` for the current user. A custom prefix is also supported;
@@ -233,9 +262,11 @@ cannot be read, the app leaves it untouched and keeps new receipts only for the 
 session. Deleting an entry or clearing history never deletes a received file.
 
 File manager integrations under Settings → File manager integrations are
-per-user and optional. The app checks for Dolphin, Nautilus and their required
-commands each time the section is opened. Installing or removing an integration
-takes effect immediately and never modifies system-wide package files.
+per-user and optional. The app checks for Dolphin, Nautilus, Nemo, the optional
+`nautilus-python` bridge and required commands each time the section is opened.
+Installing or removing an integration takes effect immediately and never
+modifies system-wide package files. The AppImage also exposes Settings →
+Desktop integration for its launcher and icon.
 
 - `Ctrl+1`, `Ctrl+2`, `Ctrl+3`: Receive, Send, Settings.
 - `Ctrl+O`: select files.
@@ -268,12 +299,14 @@ listener is restored and the error is shown; correct the saved draft and apply a
 
 The automated suite covers history, outgoing and incoming cancellation, authenticated
 favorite Quick save, X.509 identity checks, multi-file session/per-file progress,
-file manager integration installation and ownership checks, and 14 browser tests,
-alongside formatting and warning-free Clippy checks. The separate Wayland interaction
-fixture runs in standard and high-contrast modes, including history, file manager
-integration states and receiving details at 360×540, live language changes, and
-cancellation confirmations for replaced sessions. The latest local run passed 117
-application tests (3 display/environment tests run separately), 175 vendored protocol tests
+file manager integration installation and ownership checks, Nautilus Python menu
+generation, Nemo action generation, dependency-command mapping and AppImage
+launcher/icon ownership, and 14 browser tests, alongside formatting and
+warning-free Clippy checks. The separate Wayland interaction fixture runs in
+standard and high-contrast modes, including history, file manager integration
+states and receiving details at 360×540, live language changes, and cancellation
+confirmations for replaced sessions. The latest local run passed 127 application
+tests (3 display/environment tests run separately), 175 vendored protocol tests
 (1 external-network test ignored), all 14 browser tests, isolated tray interactions,
 and both Wayland modes. Real desktop file-manager and GNOME/KDE portal integration
 still needs hands-on verification.

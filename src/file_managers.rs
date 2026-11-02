@@ -4,7 +4,10 @@
 //! settings view calls this module only when the user explicitly installs or
 //! removes one. All files live below `XDG_DATA_HOME`; system-wide copies are
 //! reported but never modified.
-use crate::desktop::desktop_exec_argument;
+use crate::{
+    desktop::desktop_exec_argument,
+    i18n::{self, Locale},
+};
 use std::{
     env, fmt, fs, io,
     path::{Path, PathBuf},
@@ -17,79 +20,174 @@ const OWNER_COMMENT: &str = "# X-LocalSend-GTK-Owner: org.localsend.localsend_gt
 
 const DOLPHIN_TEMPLATE: &str = include_str!("../assets/integrations/localsend-dolphin.desktop");
 const NAUTILUS_TEMPLATE: &str = include_str!("../assets/integrations/nautilus-send-with-localsend");
+const NAUTILUS_MENU_TEMPLATE: &str = include_str!("../assets/integrations/nautilus-menu.py");
+const NEMO_TEMPLATE: &str = include_str!("../assets/integrations/nemo-action.nemo_action");
 const DOLPHIN_EXEC_MARKER: &str = "@LOCALSEND_GTK_EXEC@";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Requirement {
-    pub command: &'static str,
-    pub package: &'static str,
+pub enum Requirement {
+    Command {
+        command: &'static str,
+        package: &'static str,
+    },
+    NautilusPython,
+}
+
+impl Requirement {
+    pub fn package(self) -> &'static str {
+        match self {
+            Self::Command { package, .. } => package,
+            Self::NautilusPython => "nautilus-python",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileManagerIntegration {
     Dolphin,
-    Nautilus,
+    NautilusScript,
+    NautilusMenu,
+    Nemo,
 }
 
 impl FileManagerIntegration {
-    pub const ALL: [Self; 2] = [Self::Dolphin, Self::Nautilus];
+    pub const ALL: [Self; 4] = [
+        Self::Dolphin,
+        Self::NautilusScript,
+        Self::NautilusMenu,
+        Self::Nemo,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::Dolphin => "dolphin",
-            Self::Nautilus => "nautilus",
+            Self::NautilusScript => "nautilus-script",
+            Self::NautilusMenu => "nautilus-menu",
+            Self::Nemo => "nemo",
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Self::Dolphin => "Dolphin",
-            Self::Nautilus => "Nautilus (GNOME Files)",
+            Self::NautilusScript => "Nautilus (Scripts)",
+            Self::NautilusMenu => "Nautilus (direct menu)",
+            Self::Nemo => "Nemo",
         }
     }
 
     pub fn requirements(self) -> &'static [Requirement] {
-        static DOLPHIN: [Requirement; 1] = [Requirement {
+        static DOLPHIN: [Requirement; 1] = [Requirement::Command {
             command: "dolphin",
             package: "dolphin",
         }];
-        static NAUTILUS: [Requirement; 2] = [
-            Requirement {
+        static NAUTILUS_SCRIPT: [Requirement; 2] = [
+            Requirement::Command {
                 command: "nautilus",
                 package: "nautilus",
             },
-            Requirement {
+            Requirement::Command {
                 command: "bash",
                 package: "bash",
             },
         ];
+        static NAUTILUS_MENU: [Requirement; 2] = [
+            Requirement::Command {
+                command: "nautilus",
+                package: "nautilus",
+            },
+            Requirement::NautilusPython,
+        ];
+        static NEMO: [Requirement; 1] = [Requirement::Command {
+            command: "nemo",
+            package: "nemo",
+        }];
         match self {
             Self::Dolphin => &DOLPHIN,
-            Self::Nautilus => &NAUTILUS,
+            Self::NautilusScript => &NAUTILUS_SCRIPT,
+            Self::NautilusMenu => &NAUTILUS_MENU,
+            Self::Nemo => &NEMO,
         }
     }
 
-    fn relative_path(self) -> &'static str {
+    fn relative_path(self, locale: Locale) -> PathBuf {
         match self {
-            Self::Dolphin => "kio/servicemenus/localsend-dolphin.desktop",
-            Self::Nautilus => "nautilus/scripts/Send with LocalSend",
+            Self::Dolphin => PathBuf::from("kio/servicemenus/localsend-dolphin.desktop"),
+            Self::NautilusScript => {
+                Path::new("nautilus/scripts").join(i18n::tr_for(locale, "Send with LocalSend"))
+            }
+            Self::NautilusMenu => PathBuf::from("nautilus-python/extensions/localsend-gtk.py"),
+            Self::Nemo => PathBuf::from("nemo/actions/localsend-gtk.nemo_action"),
         }
     }
 
     pub fn target(self, environment: &Environment) -> PathBuf {
-        environment.data_home.join(self.relative_path())
+        environment
+            .data_home
+            .join(self.relative_path(environment.locale))
     }
 
-    fn contents(self, executable: &Path) -> io::Result<String> {
+    fn contents(self, executable: &Path, locale: Locale) -> io::Result<String> {
         match self {
             Self::Dolphin => {
                 let exec = desktop_exec_argument(executable)?;
-                Ok(DOLPHIN_TEMPLATE.replace(DOLPHIN_EXEC_MARKER, &exec))
+                let name = i18n::tr_for(locale, "Send with LocalSend");
+                Ok(DOLPHIN_TEMPLATE
+                    .replacen("Name=Send with LocalSend", &format!("Name={name}"), 1)
+                    .replace(DOLPHIN_EXEC_MARKER, &exec))
             }
-            Self::Nautilus => {
+            Self::NautilusScript => {
                 let quoted = shell_quote(executable)?;
                 let assignment = format!("localsend_gtk_binary={quoted}");
-                Ok(NAUTILUS_TEMPLATE.replacen("localsend_gtk_binary=", &assignment, 1))
+                Ok(NAUTILUS_TEMPLATE
+                    .replace(
+                        "Only valid local files and folders can be sent.",
+                        &i18n::tr_for(locale, "Only valid local files and folders can be sent."),
+                    )
+                    .replace(
+                        "Select one or more local files or folders to send.",
+                        &i18n::tr_for(locale, "Select one or more local files or folders to send."),
+                    )
+                    .replace(
+                        "Could not find localsend-gtk binary on PATH.",
+                        &i18n::tr_for(locale, "Could not find localsend-gtk binary on PATH."),
+                    )
+                    .replacen("localsend_gtk_binary=", &assignment, 1))
+            }
+            Self::NautilusMenu => {
+                let binary = python_string(executable)?;
+                Ok(NAUTILUS_MENU_TEMPLATE
+                    .replace("@LOCALSEND_GTK_BINARY@", &binary)
+                    .replace(
+                        "@LOCALSEND_GTK_ACTION@",
+                        &python_text(i18n::tr_for(locale, "Send with LocalSend")),
+                    )
+                    .replace(
+                        "@LOCALSEND_GTK_NOT_FOUND@",
+                        &python_text(i18n::tr_for(
+                            locale,
+                            "Could not find localsend-gtk binary on PATH.",
+                        )),
+                    ))
+            }
+            Self::Nemo => {
+                let exec = nemo_exec_argument(executable)?;
+                let icon = if crate::desktop_integration::appimage_path().is_some() {
+                    APP_ID
+                } else {
+                    "localsend-gtk"
+                };
+                Ok(NEMO_TEMPLATE
+                    .replace(
+                        "@LOCALSEND_GTK_NAMES@",
+                        &localized_action_lines("Name", locale),
+                    )
+                    .replace(
+                        "@LOCALSEND_GTK_COMMENTS@",
+                        &localized_action_lines("Comment", locale),
+                    )
+                    .replace("@LOCALSEND_GTK_EXEC@", &exec)
+                    .replace("@LOCALSEND_GTK_ICON@", icon))
             }
         }
     }
@@ -107,18 +205,31 @@ impl FileManagerIntegration {
                 }
                 Ok(keyfile.string("Desktop Entry", OWNER_KEY).ok().as_deref() == Some(APP_ID))
             }
-            Self::Nautilus => Ok(contents.lines().any(|line| line.trim() == OWNER_COMMENT)),
+            Self::NautilusScript | Self::NautilusMenu => {
+                Ok(contents.lines().any(|line| line.trim() == OWNER_COMMENT))
+            }
+            Self::Nemo => {
+                let keyfile = glib::KeyFile::new();
+                if keyfile
+                    .load_from_data(&contents, glib::KeyFileFlags::NONE)
+                    .is_err()
+                {
+                    return Ok(false);
+                }
+                Ok(keyfile.string("Nemo Action", OWNER_KEY).ok().as_deref() == Some(APP_ID))
+            }
         }
     }
 
     fn system_installed(self, environment: &Environment) -> bool {
         match self {
             // Nautilus only reads scripts from the user's data directory.
-            Self::Nautilus => false,
-            Self::Dolphin => environment
-                .data_dirs
-                .iter()
-                .any(|directory| directory.join(self.relative_path()).is_file()),
+            Self::NautilusScript | Self::NautilusMenu => false,
+            Self::Dolphin | Self::Nemo => environment.data_dirs.iter().any(|directory| {
+                directory
+                    .join(self.relative_path(environment.locale))
+                    .is_file()
+            }),
         }
     }
 
@@ -129,9 +240,10 @@ impl FileManagerIntegration {
                     .join("servicemenus")
                     .join("localsend-dolphin.desktop"),
             ),
-            Self::Nautilus => {
+            Self::NautilusScript => {
                 target.ends_with(Path::new("nautilus-scripts").join("Send with LocalSend"))
             }
+            Self::NautilusMenu | Self::Nemo => false,
         }
     }
 
@@ -159,9 +271,10 @@ impl FileManagerIntegration {
                         .string("Desktop Entry", "Icon")
                         .is_ok_and(|icon| icon.contains("localsend-gtk")))
             }
-            Self::Nautilus => Ok(contents.contains("GNOME Nautilus")
+            Self::NautilusScript => Ok(contents.contains("GNOME Nautilus")
                 && contents.contains("localsend_gtk_binary=")
                 && contents.contains("localsend-gtk")),
+            Self::NautilusMenu | Self::Nemo => Ok(false),
         }
     }
 
@@ -196,44 +309,85 @@ impl FileManagerIntegration {
         }
     }
 
+    fn installed_nautilus_scripts(
+        self,
+        environment: &Environment,
+    ) -> io::Result<Vec<InstalledScript>> {
+        if self != Self::NautilusScript {
+            return Ok(Vec::new());
+        }
+        let directory = environment.data_home.join("nautilus/scripts");
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+        let mut result = Vec::new();
+        for entry in entries {
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let path = entry.path();
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if metadata.file_type().is_symlink() {
+                let Ok(target) = fs::read_link(&path) else {
+                    continue;
+                };
+                if self.legacy_link_target(&target) {
+                    result.push(InstalledScript { path, owned: false });
+                }
+            } else if metadata.file_type().is_file() {
+                if self.owns(&path).unwrap_or(false) {
+                    result.push(InstalledScript { path, owned: true });
+                } else if self.legacy_file(&path).unwrap_or(false) {
+                    result.push(InstalledScript { path, owned: false });
+                }
+            }
+        }
+        Ok(result)
+    }
+
     pub fn inspect(self, environment: &Environment) -> Status {
         let missing = self
             .requirements()
             .iter()
-            .filter(|requirement| !environment.command_exists(requirement.command))
+            .filter(|requirement| !environment.requirement_met(**requirement))
             .collect();
         let path = self.target(environment);
-        match self.target_kind(&path, environment) {
-            Ok(TargetKind::Missing) => Status {
-                state: InstallState::NotInstalled,
-                missing,
-                error: None,
-            },
-            Ok(TargetKind::Owned) => Status {
-                state: InstallState::Installed,
-                missing,
-                error: None,
-            },
-            Ok(TargetKind::SystemManaged) => Status {
-                state: InstallState::SystemManaged,
-                missing,
-                error: None,
-            },
-            Ok(TargetKind::Legacy) => Status {
-                state: InstallState::Legacy,
-                missing,
-                error: None,
-            },
-            Ok(TargetKind::Conflict) => Status {
-                state: InstallState::Conflict,
-                missing,
-                error: None,
-            },
-            Err(error) => Status {
-                state: InstallState::Unknown,
-                missing,
-                error: Some(error.to_string()),
-            },
+        let state = match self.target_kind(&path, environment) {
+            Ok(TargetKind::Missing) if self == Self::NautilusScript => {
+                match self.installed_nautilus_scripts(environment) {
+                    Ok(files) if files.iter().any(|file| file.owned) => InstallState::Installed,
+                    Ok(files) if !files.is_empty() => InstallState::Legacy,
+                    Ok(_) => InstallState::NotInstalled,
+                    Err(error) => {
+                        return Status {
+                            state: InstallState::Unknown,
+                            missing,
+                            error: Some(error.to_string()),
+                        }
+                    }
+                }
+            }
+            Ok(TargetKind::Missing) => InstallState::NotInstalled,
+            Ok(TargetKind::Owned) => InstallState::Installed,
+            Ok(TargetKind::SystemManaged) => InstallState::SystemManaged,
+            Ok(TargetKind::Legacy) => InstallState::Legacy,
+            Ok(TargetKind::Conflict) => InstallState::Conflict,
+            Err(error) => {
+                return Status {
+                    state: InstallState::Unknown,
+                    missing,
+                    error: Some(error.to_string()),
+                }
+            }
+        };
+        Status {
+            state,
+            missing,
+            error: None,
         }
     }
 
@@ -253,8 +407,20 @@ impl FileManagerIntegration {
             TargetKind::Conflict => return Err(IntegrationError::Conflict),
             TargetKind::SystemManaged => return Err(IntegrationError::SystemManaged),
         }
-        let contents = self.contents(&executable)?;
-        write_executable(&path, contents.as_bytes())?;
+        if self == Self::NautilusScript {
+            for file in self.installed_nautilus_scripts(environment)? {
+                if file.path != path {
+                    fs::remove_file(&file.path)?;
+                }
+            }
+        }
+        let contents = self.contents(&executable, environment.locale)?;
+        let unchanged = fs::read_to_string(&path)
+            .map(|current| current == contents)
+            .unwrap_or(false);
+        if !unchanged {
+            write_executable(&path, contents.as_bytes())?;
+        }
         if self == Self::Dolphin {
             refresh_kde_cache(environment);
         }
@@ -266,6 +432,18 @@ impl FileManagerIntegration {
             return Err(IntegrationError::Unsupported);
         }
         let path = self.target(environment);
+        if self == Self::NautilusScript {
+            if self.target_kind(&path, environment)? == TargetKind::Conflict {
+                return Err(IntegrationError::Conflict);
+            }
+            for file in self.installed_nautilus_scripts(environment)? {
+                fs::remove_file(&file.path)?;
+            }
+            if fs::symlink_metadata(&path).is_ok() {
+                fs::remove_file(&path)?;
+            }
+            return Ok(());
+        }
         match self.target_kind(&path, environment)? {
             TargetKind::Owned | TargetKind::Legacy => fs::remove_file(path)?,
             TargetKind::Missing => return Ok(()),
@@ -277,6 +455,32 @@ impl FileManagerIntegration {
         }
         Ok(())
     }
+
+    /// Update an already installed integration after the desktop or app
+    /// language changes, without installing a missing one.
+    pub fn reconcile(self, environment: &Environment) -> Result<(), IntegrationError> {
+        if environment.flatpak {
+            return Ok(());
+        }
+        let path = self.target(environment);
+        let installed = match self {
+            Self::NautilusScript => !self.installed_nautilus_scripts(environment)?.is_empty(),
+            _ => matches!(self.target_kind(&path, environment)?, TargetKind::Owned),
+        };
+        if !installed {
+            return Ok(());
+        }
+        if matches!(self.target_kind(&path, environment)?, TargetKind::Conflict) {
+            return Err(IntegrationError::Conflict);
+        }
+        self.install(environment)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct InstalledScript {
+    path: PathBuf,
+    owned: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -307,15 +511,20 @@ pub struct Status {
 
 #[derive(Clone, Debug)]
 pub struct Environment {
+    home: PathBuf,
     data_home: PathBuf,
     data_dirs: Vec<PathBuf>,
     search_path: Vec<PathBuf>,
+    locale: Locale,
     flatpak: bool,
+    /// Test/fixture override; production probes the real bridge.
+    nautilus_python_available: Option<bool>,
 }
 
 impl Environment {
-    pub fn current() -> io::Result<Self> {
-        let data_home = xdg_data_home()?;
+    pub fn current(app_language: Locale) -> io::Result<Self> {
+        let home = home_directory()?;
+        let data_home = xdg_data_home(&home)?;
         let data_dirs = env::var_os("XDG_DATA_DIRS")
             .map(|value| {
                 env::split_paths(&value)
@@ -333,10 +542,13 @@ impl Environment {
             .map(|value| env::split_paths(&value).collect())
             .unwrap_or_default();
         Ok(Self {
+            home,
             data_home,
             data_dirs,
             search_path,
+            locale: i18n::integration_locale(app_language),
             flatpak: Path::new("/.flatpak-info").is_file(),
+            nautilus_python_available: None,
         })
     }
 
@@ -344,26 +556,89 @@ impl Environment {
         self.flatpak
     }
 
-    fn command_exists(&self, command: &str) -> bool {
-        self.search_path.iter().any(|directory| {
+    fn command_path(&self, command: &str) -> Option<PathBuf> {
+        self.search_path.iter().find_map(|directory| {
             let path = directory.join(command);
-            path.is_file() && is_executable(&path)
+            (path.is_file() && is_executable(&path)).then_some(path)
+        })
+    }
+
+    fn command_exists(&self, command: &str) -> bool {
+        self.command_path(command).is_some()
+    }
+
+    fn requirement_met(&self, requirement: Requirement) -> bool {
+        match requirement {
+            Requirement::Command { command, .. } => self.command_exists(command),
+            Requirement::NautilusPython => self.nautilus_python_available.unwrap_or_else(|| {
+                self.nautilus_python_bridge_exists() && self.nautilus_python_import_works()
+            }),
+        }
+    }
+
+    fn nautilus_python_bridge_exists(&self) -> bool {
+        const LIBRARY: &str = "libnautilus-python.so";
+        let relative = Path::new("nautilus").join("extensions-4").join(LIBRARY);
+        let mut candidates = vec![
+            PathBuf::from("/usr/lib").join(&relative),
+            PathBuf::from("/usr/lib64").join(&relative),
+            PathBuf::from("/usr/local/lib").join(&relative),
+            self.home.join(".local/lib").join(&relative),
+        ];
+        for root in ["/usr/lib", "/usr/lib64", "/usr/local/lib"] {
+            let Ok(entries) = fs::read_dir(root) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    candidates.push(path.join(&relative));
+                }
+            }
+        }
+        candidates.into_iter().any(|path| path.is_file())
+    }
+
+    fn nautilus_python_import_works(&self) -> bool {
+        let mut interpreters = Vec::new();
+        let system = PathBuf::from("/usr/bin/python3");
+        if system.is_file() && is_executable(&system) {
+            interpreters.push(system);
+        }
+        if let Some(path) = self.command_path("python3") {
+            if !interpreters.contains(&path) {
+                interpreters.push(path);
+            }
+        }
+        interpreters.into_iter().any(|python| {
+            Command::new(python)
+                .args([
+                    "-c",
+                    "import gi; gi.require_version('Nautilus', '4.0'); from gi.repository import Nautilus",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success())
         })
     }
 
     /// Deterministic environment for the headless GTK fixture. It never reads
     /// or writes the real user's data directories.
-    pub fn fixture() -> Self {
+    pub fn fixture(app_language: Locale) -> Self {
         Self {
+            home: PathBuf::from("/nonexistent/localsend-gtk-home"),
             data_home: PathBuf::from("/nonexistent/localsend-gtk-test"),
             data_dirs: Vec::new(),
             search_path: Vec::new(),
+            locale: i18n::integration_locale(app_language),
             flatpak: false,
+            nautilus_python_available: Some(false),
         }
     }
 
     #[cfg(test)]
-    fn for_test(root: &Path, commands: &[&str], flatpak: bool) -> Self {
+    fn for_test(root: &Path, commands: &[&str], locale: Locale, flatpak: bool) -> Self {
         let bin = root.join("bin");
         for command in commands {
             let path = bin.join(command);
@@ -376,26 +651,32 @@ impl Environment {
             }
         }
         Self {
+            home: root.join("home"),
             data_home: root.join("data"),
             data_dirs: vec![root.join("system")],
             search_path: vec![bin],
+            locale,
             flatpak,
+            nautilus_python_available: Some(false),
         }
     }
 }
 
-fn xdg_data_home() -> io::Result<PathBuf> {
+fn home_directory() -> io::Result<PathBuf> {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_owned()))
+        .ok_or_else(|| io::Error::other("Could not locate the user home directory"))
+}
+
+fn xdg_data_home(home: &Path) -> io::Result<PathBuf> {
     if let Some(path) = env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
     {
         return Ok(path);
     }
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_owned()))
-        .ok_or_else(|| io::Error::other("Could not locate the user data directory"))?;
     Ok(home.join(".local/share"))
 }
 
@@ -412,6 +693,48 @@ fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
 
+fn nemo_exec_argument(executable: &Path) -> io::Result<String> {
+    let text = executable.to_str().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The integration requires a UTF-8 executable path",
+        )
+    })?;
+    if !executable.is_absolute() || text.chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The integration requires an absolute executable path without control characters.",
+        ));
+    }
+    // Nemo substitutes its own % tokens before shell parsing, so a literal
+    // percent in the executable path must be doubled first.
+    let text = text.replace('%', "%%").replace('\'', "'\\''");
+    Ok(format!("'{text}' -- %F"))
+}
+
+fn localized_action_lines(prefix: &str, fallback: Locale) -> String {
+    let mut result = format!(
+        "{prefix}={}\n",
+        i18n::tr_for(fallback, "Send with LocalSend")
+    );
+    for (locale, key) in [
+        (Locale::ZhCn, "zh_CN"),
+        (Locale::ZhTw, "zh_TW"),
+        (Locale::Ja, "ja"),
+        (Locale::Ko, "ko"),
+        (Locale::De, "de"),
+        (Locale::Fr, "fr"),
+        (Locale::Es, "es"),
+        (Locale::Ru, "ru"),
+    ] {
+        result.push_str(&format!(
+            "{prefix}[{key}]={}\n",
+            i18n::tr_for(locale, "Send with LocalSend")
+        ));
+    }
+    result
+}
+
 fn shell_quote(executable: &Path) -> io::Result<String> {
     let text = executable.to_str().ok_or_else(|| {
         io::Error::new(
@@ -426,6 +749,26 @@ fn shell_quote(executable: &Path) -> io::Result<String> {
         ));
     }
     Ok(format!("'{}'", text.replace('\'', "'\\''")))
+}
+
+fn python_string(executable: &Path) -> io::Result<String> {
+    let text = executable.to_str().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The integration requires a UTF-8 executable path",
+        )
+    })?;
+    if !executable.is_absolute() || text.chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The integration requires an absolute executable path without control characters.",
+        ));
+    }
+    Ok(python_text(text.to_owned()))
+}
+
+fn python_text(text: String) -> String {
+    serde_json::to_string(&text).expect("JSON string encoding")
 }
 
 fn write_executable(path: &Path, contents: &[u8]) -> io::Result<()> {
@@ -523,20 +866,57 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    fn environment(root: &Path, commands: &[&str], locale: Locale) -> Environment {
+        Environment::for_test(root, commands, locale, false)
+    }
+
     fn target(integration: FileManagerIntegration, environment: &Environment) -> PathBuf {
         integration.target(environment)
     }
 
-    #[test]
-    fn installs_and_removes_user_integrations_with_executable_permissions() {
-        let root = tempfile::tempdir().unwrap();
-        let environment =
-            Environment::for_test(root.path(), &["dolphin", "nautilus", "bash"], false);
+    fn legacy_script() -> &'static str {
+        "#!/usr/bin/env bash\n# GNOME Nautilus / Files script to send selected files via LocalSend GTK.\nlocalsend_gtk_binary=\nexec localsend-gtk -- \"$@\"\n"
+    }
 
-        for integration in FileManagerIntegration::ALL {
+    fn assert_script_syntax(path: &Path) {
+        assert!(Command::new("bash")
+            .args(["-n", path.to_str().unwrap()])
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    fn assert_python_syntax(path: &Path) {
+        assert!(
+            Command::new("python3")
+                .args([
+                    "-c",
+                    "import sys; compile(open(sys.argv[1], encoding='utf-8').read(), sys.argv[1], 'exec')",
+                    path.to_str().unwrap(),
+                ])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+
+    #[test]
+    fn installs_and_removes_script_dolphin_and_nemo_integrations() {
+        let root = tempfile::tempdir().unwrap();
+        let environment = environment(
+            root.path(),
+            &["dolphin", "nautilus", "bash", "nemo"],
+            Locale::En,
+        );
+
+        for integration in [
+            FileManagerIntegration::Dolphin,
+            FileManagerIntegration::NautilusScript,
+            FileManagerIntegration::Nemo,
+        ] {
             let status = integration.inspect(&environment);
             assert_eq!(status.state, InstallState::NotInstalled);
-            assert!(status.missing.is_empty());
+            assert!(status.missing.is_empty(), "{integration:?}");
 
             integration.install(&environment).unwrap();
             let path = target(integration, &environment);
@@ -560,17 +940,101 @@ mod tests {
     }
 
     #[test]
-    fn dolphin_menu_is_valid_and_uses_the_current_executable() {
+    fn nemo_action_has_localized_names_and_safe_exec() {
         let root = tempfile::tempdir().unwrap();
-        let environment = Environment::for_test(root.path(), &["dolphin"], false);
-        let integration = FileManagerIntegration::Dolphin;
+        let environment = environment(root.path(), &["nemo"], Locale::Es);
+        let integration = FileManagerIntegration::Nemo;
         integration.install(&environment).unwrap();
-        let contents = fs::read_to_string(target(integration, &environment)).unwrap();
+        let path = target(integration, &environment);
+        assert!(path.ends_with("nemo/actions/localsend-gtk.nemo_action"));
+        let contents = fs::read_to_string(&path).unwrap();
         let keyfile = glib::KeyFile::new();
         keyfile
             .load_from_data(&contents, glib::KeyFileFlags::NONE)
             .unwrap();
-        assert_eq!(keyfile.string("Desktop Entry", OWNER_KEY).unwrap(), APP_ID);
+        assert_eq!(keyfile.string("Nemo Action", OWNER_KEY).unwrap(), APP_ID);
+        assert_eq!(
+            keyfile.string("Nemo Action", "Name[es]").unwrap(),
+            "Enviar con LocalSend"
+        );
+        assert_eq!(
+            keyfile.string("Nemo Action", "Comment[es]").unwrap(),
+            "Enviar con LocalSend"
+        );
+        assert_eq!(keyfile.string("Nemo Action", "Quote").unwrap(), "double");
+        assert_eq!(keyfile.string("Nemo Action", "Extensions").unwrap(), "any;");
+        let exec = keyfile.string("Nemo Action", "Exec").unwrap();
+        assert!(exec.contains("-- %F"));
+        assert!(exec.contains(&env::current_exe().unwrap().to_string_lossy().into_owned()));
+    }
+
+    #[test]
+    fn nautilus_python_menu_is_generated_with_a_localized_label() {
+        let root = tempfile::tempdir().unwrap();
+        let environment = environment(root.path(), &["nautilus"], Locale::Es);
+        let integration = FileManagerIntegration::NautilusMenu;
+        integration.install(&environment).unwrap();
+        let path = target(integration, &environment);
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(OWNER_COMMENT));
+        assert!(contents.contains("Enviar con LocalSend"));
+        assert!(!contents.contains("@LOCALSEND_GTK_"));
+        assert_python_syntax(&path);
+        assert_eq!(
+            integration.inspect(&environment).state,
+            InstallState::Installed
+        );
+
+        integration.remove(&environment).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn nautilus_script_name_and_messages_follow_the_integration_locale() {
+        let root = tempfile::tempdir().unwrap();
+        let spanish = environment(root.path(), &["nautilus", "bash"], Locale::Es);
+        let integration = FileManagerIntegration::NautilusScript;
+        integration.install(&spanish).unwrap();
+        let spanish_path = target(integration, &spanish);
+        assert!(spanish_path.ends_with("Enviar con LocalSend"));
+        let contents = fs::read_to_string(&spanish_path).unwrap();
+        assert!(contents.contains("Solo se pueden enviar archivos y carpetas locales válidos."));
+        assert_script_syntax(&spanish_path);
+
+        let english = environment(root.path(), &["nautilus", "bash"], Locale::En);
+        integration.reconcile(&english).unwrap();
+        let english_path = target(integration, &english);
+        assert!(english_path.ends_with("Send with LocalSend"));
+        assert!(!spanish_path.exists());
+        let contents = fs::read_to_string(&english_path).unwrap();
+        assert!(contents.contains("Only valid local files and folders can be sent."));
+
+        integration.remove(&english).unwrap();
+        let legacy_path = root
+            .path()
+            .join("data/nautilus/scripts/Send with LocalSend");
+        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+        fs::write(&legacy_path, legacy_script()).unwrap();
+        assert_eq!(integration.inspect(&spanish).state, InstallState::Legacy);
+        integration.reconcile(&spanish).unwrap();
+        assert!(!legacy_path.exists());
+        assert!(spanish_path.exists());
+    }
+
+    #[test]
+    fn dolphin_menu_localizes_its_fallback_name() {
+        let root = tempfile::tempdir().unwrap();
+        let environment = environment(root.path(), &["dolphin"], Locale::Es);
+        let integration = FileManagerIntegration::Dolphin;
+        integration.install(&environment).unwrap();
+        let contents = fs::read_to_string(target(integration, &environment)).unwrap();
+        assert!(contents
+            .lines()
+            .any(|line| line == "Name=Enviar con LocalSend"));
+        let keyfile = glib::KeyFile::new();
+        keyfile
+            .load_from_data(&contents, glib::KeyFileFlags::NONE)
+            .unwrap();
         let exec = keyfile
             .string("Desktop Action SendWithLocalSend", "Exec")
             .unwrap();
@@ -579,35 +1043,17 @@ mod tests {
     }
 
     #[test]
-    fn nautilus_script_is_valid_shell_and_keeps_the_owner_marker() {
-        let root = tempfile::tempdir().unwrap();
-        let environment = Environment::for_test(root.path(), &["nautilus", "bash"], false);
-        let integration = FileManagerIntegration::Nautilus;
-        integration.install(&environment).unwrap();
-        let path = target(integration, &environment);
-        let contents = fs::read_to_string(&path).unwrap();
-        assert!(contents.contains(OWNER_COMMENT));
-        assert!(contents.contains("localsend_gtk_binary='"));
-        assert!(Command::new("bash")
-            .args(["-n", path.to_str().unwrap()])
-            .status()
-            .unwrap()
-            .success());
-    }
-
-    #[test]
-    fn unusual_executable_paths_are_escaped_for_desktop_and_shell_files() {
+    fn unusual_executable_paths_are_escaped_for_each_integration() {
         let root = tempfile::tempdir().unwrap();
         let executable = root.path().join("Local Send '$`\\\";%f青");
         let dolphin = FileManagerIntegration::Dolphin
-            .contents(&executable)
+            .contents(&executable, Locale::En)
             .unwrap();
         assert!(dolphin.contains("/usr/bin/env -- "));
         assert!(dolphin.contains("%%f"));
-        assert!(dolphin.contains(" %U"));
 
-        let script = FileManagerIntegration::Nautilus
-            .contents(&executable)
+        let script = FileManagerIntegration::NautilusScript
+            .contents(&executable, Locale::En)
             .unwrap();
         let assignment = script
             .lines()
@@ -620,13 +1066,25 @@ mod tests {
                 executable.to_string_lossy().replace('\'', "'\\''")
             )
         );
+
+        let menu = FileManagerIntegration::NautilusMenu
+            .contents(&executable, Locale::En)
+            .unwrap();
+        assert!(menu.contains("BINARY = "));
+        assert!(menu.contains("\\\""));
+
+        let nemo = FileManagerIntegration::Nemo
+            .contents(&executable, Locale::En)
+            .unwrap();
+        assert!(nemo.contains("-- %F"));
+        assert!(nemo.contains("%%f"));
+        assert!(nemo.contains("'\\''"));
     }
 
     #[test]
     fn unowned_files_are_reported_and_never_replaced_or_deleted() {
         let root = tempfile::tempdir().unwrap();
-        let environment =
-            Environment::for_test(root.path(), &["dolphin", "nautilus", "bash"], false);
+        let environment = environment(root.path(), &["dolphin", "nautilus", "bash"], Locale::En);
         for integration in FileManagerIntegration::ALL {
             let path = target(integration, &environment);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -650,17 +1108,13 @@ mod tests {
     #[test]
     fn legacy_user_files_without_markers_can_be_replaced_and_removed() {
         let root = tempfile::tempdir().unwrap();
-        let environment =
-            Environment::for_test(root.path(), &["dolphin", "nautilus", "bash"], false);
+        let environment = environment(root.path(), &["dolphin", "nautilus", "bash"], Locale::En);
         for (integration, legacy) in [
             (
                 FileManagerIntegration::Dolphin,
                 "[Desktop Entry]\nType=Service\nActions=SendWithLocalSend;\nIcon=/home/user/.local/share/icons/hicolor/512x512/apps/localsend-gtk.png\n\n[Desktop Action SendWithLocalSend]\nName=Send with LocalSend\nExec=/home/user/.local/bin/localsend-gtk %U\n",
             ),
-            (
-                FileManagerIntegration::Nautilus,
-                "#!/usr/bin/env bash\n# GNOME Nautilus / Files script to send selected files via LocalSend GTK.\nlocalsend_gtk_binary=\nexec localsend-gtk -- \"$@\"\n",
-            ),
+            (FileManagerIntegration::NautilusScript, legacy_script()),
         ] {
             let path = target(integration, &environment);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -682,8 +1136,8 @@ mod tests {
     #[test]
     fn legacy_system_symlinks_can_be_replaced_without_touching_the_target() {
         let root = tempfile::tempdir().unwrap();
-        let environment = Environment::for_test(root.path(), &["nautilus", "bash"], false);
-        let integration = FileManagerIntegration::Nautilus;
+        let environment = environment(root.path(), &["nautilus", "bash"], Locale::En);
+        let integration = FileManagerIntegration::NautilusScript;
         let system_file = environment
             .data_dirs
             .first()
@@ -711,8 +1165,8 @@ mod tests {
     #[test]
     fn unrelated_symlinks_are_conflicts() {
         let root = tempfile::tempdir().unwrap();
-        let environment = Environment::for_test(root.path(), &["nautilus", "bash"], false);
-        let integration = FileManagerIntegration::Nautilus;
+        let environment = environment(root.path(), &["nautilus", "bash"], Locale::En);
+        let integration = FileManagerIntegration::NautilusScript;
         let other = root.path().join("other");
         fs::write(&other, "foreign").unwrap();
         let path = target(integration, &environment);
@@ -732,7 +1186,7 @@ mod tests {
     #[test]
     fn system_package_integrations_are_read_only() {
         let root = tempfile::tempdir().unwrap();
-        let environment = Environment::for_test(root.path(), &["dolphin"], false);
+        let environment = environment(root.path(), &["dolphin"], Locale::En);
         let integration = FileManagerIntegration::Dolphin;
         let system_file = environment
             .data_dirs
@@ -753,36 +1207,86 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_manager_and_flatpak_are_reported() {
+    fn missing_requirements_name_the_packages_to_install() {
         let root = tempfile::tempdir().unwrap();
-        let environment = Environment::for_test(root.path(), &[], false);
-        let status = FileManagerIntegration::Nautilus.inspect(&environment);
+        let environment = environment(root.path(), &[], Locale::En);
+        let status = FileManagerIntegration::NautilusScript.inspect(&environment);
         assert_eq!(
             status
                 .missing
                 .iter()
-                .map(|requirement| requirement.package)
+                .map(|requirement| requirement.package())
                 .collect::<Vec<_>>(),
             ["nautilus", "bash"]
         );
+        assert!(FileManagerIntegration::NautilusMenu
+            .requirements()
+            .iter()
+            .any(|requirement| matches!(requirement, Requirement::NautilusPython)));
+        assert_eq!(Requirement::NautilusPython.package(), "nautilus-python");
+        let status = FileManagerIntegration::NautilusMenu.inspect(&environment);
+        assert_eq!(
+            status
+                .missing
+                .iter()
+                .map(|requirement| requirement.package())
+                .collect::<Vec<_>>(),
+            ["nautilus", "nautilus-python"]
+        );
 
-        let flatpak = Environment::for_test(root.path(), &["nautilus", "bash"], true);
-        assert!(matches!(
-            FileManagerIntegration::Nautilus.install(&flatpak),
-            Err(IntegrationError::Unsupported)
-        ));
+        let mut available = environment.clone();
+        available.nautilus_python_available = Some(true);
+        let status = FileManagerIntegration::NautilusMenu.inspect(&available);
+        assert_eq!(
+            status
+                .missing
+                .iter()
+                .map(|requirement| requirement.package())
+                .collect::<Vec<_>>(),
+            ["nautilus"]
+        );
     }
 
     #[test]
-    fn data_home_follows_xdg_layout() {
-        let environment = Environment::for_test(Path::new("/tmp/root"), &[], false);
+    fn flatpak_rejects_all_installations() {
+        let root = tempfile::tempdir().unwrap();
+        for integration in FileManagerIntegration::ALL {
+            let environment = Environment::for_test(
+                root.path(),
+                &["dolphin", "nautilus", "bash"],
+                Locale::En,
+                true,
+            );
+            assert!(matches!(
+                integration.install(&environment),
+                Err(IntegrationError::Unsupported)
+            ));
+        }
+    }
+
+    #[test]
+    fn targets_follow_the_localized_xdg_layout() {
+        let english = Environment::for_test(Path::new("/tmp/root"), &[], Locale::En, false);
+        let spanish = Environment::for_test(Path::new("/tmp/root"), &[], Locale::Es, false);
         assert_eq!(
-            FileManagerIntegration::Dolphin.target(&environment),
+            FileManagerIntegration::Dolphin.target(&english),
             Path::new("/tmp/root/data/kio/servicemenus/localsend-dolphin.desktop")
         );
         assert_eq!(
-            FileManagerIntegration::Nautilus.target(&environment),
+            FileManagerIntegration::NautilusScript.target(&english),
             Path::new("/tmp/root/data/nautilus/scripts/Send with LocalSend")
+        );
+        assert_eq!(
+            FileManagerIntegration::NautilusScript.target(&spanish),
+            Path::new("/tmp/root/data/nautilus/scripts/Enviar con LocalSend")
+        );
+        assert_eq!(
+            FileManagerIntegration::NautilusMenu.target(&english),
+            Path::new("/tmp/root/data/nautilus-python/extensions/localsend-gtk.py")
+        );
+        assert_eq!(
+            FileManagerIntegration::Nemo.target(&english),
+            Path::new("/tmp/root/data/nemo/actions/localsend-gtk.nemo_action")
         );
     }
 }

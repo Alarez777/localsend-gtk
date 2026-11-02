@@ -2,6 +2,8 @@ mod address;
 mod alias_gen;
 mod appearance;
 mod desktop;
+mod desktop_integration;
+mod distro;
 mod file_managers;
 mod history;
 mod http_client;

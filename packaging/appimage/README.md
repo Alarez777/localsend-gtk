@@ -38,11 +38,25 @@ Without FUSE, use `--appimage-extract-and-run`.
 ## Desktop integration
 
 The AppImage runtime sets `APPIMAGE` to the outer AppImage path. LocalSend GTK
-uses that path for autostart and file manager integrations, so they keep working
-after the temporary AppImage mount disappears. If the AppImage file is moved,
-reinstall those integrations from Settings.
+uses that path for autostart, file manager integrations and the optional desktop
+entry, so they keep working after the temporary AppImage mount disappears. If
+the AppImage file is moved, reinstall those integrations from Settings.
+
+The AppImage contains `org.localsend.localsend_gtk.png`, a compatibility
+`localsend-gtk.png` alias and `.DirIcon`. To make the application icon appear in
+the menu, dock and window, open **Settings → Desktop integration → Application
+menu and icon**. That action installs:
+
+- `~/.local/share/applications/org.localsend.localsend_gtk.desktop`
+- `~/.local/share/icons/hicolor/512x512/apps/org.localsend.localsend_gtk.png`
+
+The launcher uses the outer `.AppImage` path and the localized file-manager
+action name. Nautilus may still show a generic icon for the `.AppImage` file
+itself unless AppImageLauncher, Gearlever or a compatible thumbnailer is
+installed; that is independent of the application icon.
 
 File manager integrations and native file dialogs still need the host file
 manager, `xdg-desktop-portal` and its desktop backend. The AppImage cannot write
 into the host's data directories from a Flatpak sandbox; it is a normal host
-process, not a Flatpak.
+process, not a Flatpak. The optional Nautilus direct-menu extension needs the
+host's `nautilus-python` bridge; the Scripts integration does not.
