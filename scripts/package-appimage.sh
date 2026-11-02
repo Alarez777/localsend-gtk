@@ -32,6 +32,21 @@ case "$ARCH" in
     *) echo "Unsupported AppImage architecture: $ARCH" >&2; exit 1 ;;
 esac
 
+# Use the repository that actually triggered the build. This makes fork and
+# upstream releases self-contained: no owner or repository is hard-coded.
+APPIMAGE_UPDATE_INFO="${APPIMAGE_UPDATE_INFO:-}"
+if [[ -z "$APPIMAGE_UPDATE_INFO" && -n "${GITHUB_REPOSITORY:-}" ]]; then
+    OWNER="${GITHUB_REPOSITORY%%/*}"
+    REPO="${GITHUB_REPOSITORY#*/}"
+    APPIMAGE_UPDATE_INFO="gh-releases-zsync|${OWNER}|${REPO}|latest|localsend-gtk-*-linux-${ARCH}.AppImage.zsync"
+fi
+if [[ -n "$APPIMAGE_UPDATE_INFO" ]]; then
+    command -v zsyncmake >/dev/null 2>&1 || {
+        echo "APPIMAGE_UPDATE_INFO is set but zsyncmake is missing." >&2
+        exit 1
+    }
+fi
+
 cargo build --release --locked
 BIN="$ROOT/target/release/localsend-gtk"
 [[ -x "$BIN" ]] || { echo "Release binary is missing: $BIN" >&2; exit 1; }
@@ -98,17 +113,49 @@ grep -q '^StartupWMClass=org\.localsend\.localsend_gtk$' "$ROOT_DESKTOP" || {
 desktop-file-validate "$ROOT_DESKTOP"
 mkdir -p "$ROOT/target/dist"
 OUTPUT="$ROOT/target/dist/localsend-gtk-v${VERSION}-linux-${ARCH}.AppImage"
-rm -f "$OUTPUT"
+STRAY_ZSYNC="$ROOT/$(basename "$OUTPUT").zsync"
+rm -f "$OUTPUT" "$OUTPUT.zsync" "$STRAY_ZSYNC"
 
 TOOL_ARGS=()
 if [[ "${APPIMAGETOOL_EXTRACT:-0}" == "1" ]]; then
     TOOL_ARGS+=(--appimage-extract-and-run)
 fi
+if [[ -n "$APPIMAGE_UPDATE_INFO" ]]; then
+    TOOL_ARGS+=(-u "$APPIMAGE_UPDATE_INFO")
+fi
 
 VERSION="$VERSION" ARCH="$ARCH" \
     "$APPIMAGETOOL" "${TOOL_ARGS[@]}" "$APPDIR" "$OUTPUT"
 chmod 755 "$OUTPUT"
+if [[ -n "$APPIMAGE_UPDATE_INFO" && ! -f "$OUTPUT.zsync" && -f "$STRAY_ZSYNC" ]]; then
+    # appimagetool writes the zsync file in the current working directory.
+    mv "$STRAY_ZSYNC" "$OUTPUT.zsync"
+fi
+if [[ -n "$APPIMAGE_UPDATE_INFO" ]]; then
+    grep -aFq "$APPIMAGE_UPDATE_INFO" "$OUTPUT" || {
+        echo "The AppImage does not contain the expected update information." >&2
+        exit 1
+    }
+    [[ -f "$OUTPUT.zsync" ]] || {
+        echo "appimagetool did not create $OUTPUT.zsync." >&2
+        exit 1
+    }
+    grep -q '^zsync:' "$OUTPUT.zsync" || {
+        echo "The generated .zsync file is invalid." >&2
+        exit 1
+    }
+fi
 CHECKSUM="$(sha256sum "$OUTPUT" | cut -d' ' -f1)"
-printf '%s  %s\n' "$CHECKSUM" "$(basename "$OUTPUT")" > "$OUTPUT.sha256"
+{
+    printf '%s  %s\n' "$CHECKSUM" "$(basename "$OUTPUT")"
+    if [[ -f "$OUTPUT.zsync" ]]; then
+        ZSYNC_CHECKSUM="$(sha256sum "$OUTPUT.zsync" | cut -d' ' -f1)"
+        printf '%s  %s\n' "$ZSYNC_CHECKSUM" "$(basename "$OUTPUT.zsync")"
+    fi
+} > "$OUTPUT.sha256"
 echo "Created $OUTPUT"
+if [[ -f "$OUTPUT.zsync" ]]; then
+    echo "Created $OUTPUT.zsync"
+    echo "Update information: $APPIMAGE_UPDATE_INFO"
+fi
 echo "The AppImage uses the system GTK4/libadwaita runtime; see packaging/appimage/README.md."

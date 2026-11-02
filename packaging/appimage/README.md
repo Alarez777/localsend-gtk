@@ -26,6 +26,37 @@ target/dist/localsend-gtk-v<version>-linux-<arch>.AppImage
 
 and a matching `.sha256` file.
 
+## Update information and zsync
+
+The release workflow derives the AppImage update source from the repository
+that triggered the build, so forks and upstream need no hardcoded owner:
+
+```text
+gh-releases-zsync|OWNER|REPO|latest|localsend-gtk-*-linux-<arch>.AppImage.zsync
+```
+
+It embeds that string with `appimagetool -u` and publishes the generated
+`.AppImage.zsync` next to the AppImage. Gearlever and AppImageUpdate read the
+embedded information, consult the latest published GitHub release and download
+only the changed blocks.
+
+For local release testing, provide the update information explicitly:
+
+```sh
+APPIMAGETOOL=/path/to/appimagetool-x86_64.AppImage \
+APPIMAGETOOL_EXTRACT=1 \
+APPIMAGE_UPDATE_INFO="gh-releases-zsync|Alarez777|localsend-gtk|latest|localsend-gtk-*-linux-x86_64.AppImage.zsync" \
+bash scripts/package-appimage.sh
+```
+
+`zsyncmake` must be installed. Without `APPIMAGE_UPDATE_INFO` or
+`GITHUB_REPOSITORY`, the script creates a plain AppImage and no `.zsync`, which
+is useful for local testing.
+
+The GitHub Actions release keeps the release in **draft** until it is validated
+and published. Gearlever only sees the update after publication, because it
+uses the latest published release.
+
 ## Run
 
 ```sh

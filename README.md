@@ -162,6 +162,14 @@ The script rebuilds the current source, produces DEB, RPM and tar.gz packages in
 Versioned tags must match Cargo.toml, Cargo.lock and the RPM spec. Release notes
 for this update are in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
 
+The GitHub Actions release also builds the AppImage and its
+`AppImage.zsync` update metadata. The AppImage embeds
+`gh-releases-zsync` update information derived from `GITHUB_REPOSITORY`, so a
+fork release updates from that fork and an upstream release updates from
+upstream without changing the workflow. The release is created as a draft;
+Gearlever and AppImageUpdate only detect it after it is published. The AppImage
+remains thin and uses the host's GTK4/libadwaita runtime.
+
 All three packages include the application launcher. File manager integrations
 are optional and are **not** installed by packages, at startup or by the tar
 installer. Open **Settings → File manager integrations** and install the
