@@ -1,5 +1,5 @@
 Name:           localsend-gtk
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        Native GTK4/Adwaita GUI for LocalSend in Rust
 
@@ -47,5 +47,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.localsend.localse
 %doc README.md THIRD_PARTY_NOTICES.md
 
 %changelog
+* Mon Nov 02 2026 SamSeven777 <qiryse7en@gmail.com> - 0.1.1-1
+- Add opt-in Dolphin, Nautilus and Nemo integrations, AppImage desktop integration and AppImage releases with zsync updates.
+
 * Sat Oct 03 2026 SamSeven777 <qiryse7en@gmail.com> - 0.1.0-1
 - Initial release with native GTK4 interface, corrected receive consent and animated receive logo.

@@ -160,7 +160,7 @@ bash scripts/package-release.sh
 The script rebuilds the current source, produces DEB, RPM and tar.gz packages in
 `target/dist`, and writes `SHA256SUMS`. It stops if any package cannot be produced.
 Versioned tags must match Cargo.toml, Cargo.lock and the RPM spec. Release notes
-for this update are in [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md).
+for this update are in [docs/releases/v0.1.1.md](docs/releases/v0.1.1.md).
 
 The GitHub Actions release also builds the AppImage and its
 `AppImage.zsync` update metadata. The AppImage embeds
